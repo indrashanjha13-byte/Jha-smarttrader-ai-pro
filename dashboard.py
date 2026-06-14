@@ -1,0 +1,85 @@
+from pathlib import Path
+from PIL import Image
+import streamlit as st
+from signals import get_signals
+from strategy import generate_signal
+
+BASE_DIR = Path(__file__).resolve().parent
+logo = Image.open(BASE_DIR / "logo.png")
+
+st.image(logo, width=150)
+
+st.set_page_config(
+    page_title="SmartTrader AI Pro",
+    layout="wide"
+)
+
+st.title("📈 SmartTrader AI Pro")
+
+
+symbol = st.text_input(
+    "Symbol",
+    "BANKNIFTY"
+    "NIFTY"
+    "RELIANCE"
+    "TCS"
+    "INFY"
+)
+
+if st.button("Run Scanner"):
+
+    data = get_signals(symbol)
+
+    if "error" in data:
+        st.error(data["error"])
+
+    else:
+
+        result = generate_signal(
+            data["SUPERTREND"],
+            data["MACD"],
+            data["MACD_SIGNAL"],
+            data["Volume"],
+            data["AVG_VOLUME"],
+            data["Close"]
+        )
+
+
+        col1,col2,col3 = st.columns(3)
+
+
+        col1.metric(
+            "Signal",
+            result["signal"]
+        )
+
+        col2.metric(
+            "MACD",
+            round(data["MACD"],2)
+        )
+
+        col3.metric(
+            "RSI",
+            round(data["RSI"],2)
+        )
+
+
+        st.write("Entry:", result["entry"])
+        st.write("Stop Loss:", result["stoploss"])
+        st.write("Target:", result["target"])
+
+import streamlit as st
+
+st.header("SmartTrader AI Pro Dashboard")
+
+st.button("Start Trading")
+st.button("Stop Trading")
+
+st.subheader("Strategy")
+st.write("SuperTrend + MACD + Volume Filter")
+
+st.subheader("Portfolio")
+st.write("Portfolio Manager Loaded")
+
+st.subheader("Reports")
+st.write("Trading Report")
