@@ -25,6 +25,18 @@ symbol = st.text_input(
     "TCS"
     "INFY"
 )
+# Option Selection
+st.subheader("option Selection")
+
+option_side = st.selectbox(
+    "Option Type",
+    ["CE", "PE"]
+)
+strike_mode = st.selectbox(
+    "Strike Selection",
+    ["ITM", "ATM", "OTM"]
+)
+st.write(f"Selected: {strike_mode}{option_side}")
 
 if st.button("Run Scanner"):
 

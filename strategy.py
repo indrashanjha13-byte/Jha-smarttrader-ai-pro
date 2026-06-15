@@ -49,3 +49,14 @@ def generate_signal(
         return "SELL"
 
     return "NO TRADE"
+def option_selection(signal, strike_mode):
+
+    if signal == "BUY":
+        if strike_mode == "ITM":
+            return "Buy ITM Option"
+        elif strike_mode == "ATM":
+            return "Buy ATM Option"
+        else:
+            return "Buy OTM Option"
+
+    return "No Trade"
