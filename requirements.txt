@@ -1,6 +1,6 @@
 streamlit
 yfinance
-Pandas
-Pandas-ta
+pandas
+pandas-ta
 pillow
 numpy
