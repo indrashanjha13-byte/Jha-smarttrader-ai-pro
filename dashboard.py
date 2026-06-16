@@ -4,19 +4,19 @@ import streamlit as st
 from signals import get_signals
 from strategy import generate_signal
 
-BASE_DIR = Path(__file__).resolve().parent
-logo = Image.open(BASE_DIR / "logo.png")
-
-st.image(logo, width=150)
-
 st.set_page_config(
     page_title="SmartTrader AI Pro",
     layout="wide"
-)
+BASE_DIR = path(__file__).resolve().parent
+logo_path = BASE_DIR / "logo.png"
 
+if logo_path.exists():
+    try:
+        logo =Image.open(logo_path)
+        st.image(logo,width=150)
+except:
+    pass
 st.title("📈 SmartTrader AI Pro")
-
-
 symbol = st.text_input(
     "Symbol",
     "BANKNIFTY"
