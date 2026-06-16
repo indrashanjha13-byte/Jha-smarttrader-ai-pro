@@ -7,6 +7,7 @@ from strategy import generate_signal
 st.set_page_config(
     page_title="SmartTrader AI Pro",
     layout="wide"
+)
 BASE_DIR = path(__file__).resolve().parent
 logo_path = BASE_DIR / "logo.png"
 
