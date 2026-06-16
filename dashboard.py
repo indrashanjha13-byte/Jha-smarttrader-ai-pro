@@ -15,8 +15,8 @@ if logo_path.exists():
     try:
         logo =Image.open(logo_path)
         st.image(logo,width=150)
-except:
-    pass
+    except:
+        pass
 st.title("📈 SmartTrader AI Pro")
 symbol = st.text_input(
     "Symbol",
