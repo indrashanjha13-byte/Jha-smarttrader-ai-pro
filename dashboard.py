@@ -18,7 +18,7 @@ if logo_path.exists():
     except:
         pass
 st.title("📈 SmartTrader AI Pro")
-symbol = st.text_input(
+symbol = st.selectbox(
     "Symbol",
     "BANKNIFTY"
     "NIFTY"
