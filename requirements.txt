@@ -3,3 +3,5 @@ yfinance
 pandas_ta
 pillow
 numpy
+plotly
+requests
