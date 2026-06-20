@@ -12,7 +12,7 @@ def get_signals(symbol):
         auto_adjust=False
     )
     print("Symbol:", symbol)
-    print(df.yail())
+    print(df.tail())
 
     if df.empty:
         return {"error": "No data"}
