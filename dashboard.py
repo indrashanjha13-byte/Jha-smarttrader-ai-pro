@@ -4,14 +4,15 @@ import streamlit as st
 from signals import get_signals
 from strategy import generate_signal
 from ai_signal_ranker import signal_score
+from paper_trading import PaperTrader
 
 st.set_page_config(
     page_title="SmartTrader AI Pro",
     layout="wide"
 )
 BASE_DIR = Path(__file__).resolve().parent
-logo_path = BASE_DIR / "logo.png"
 
+logo_path = BASE_DIR / "logo.png"
 if logo_path.exists():
     try:
         logo =Image.open(logo_path)
@@ -36,7 +37,21 @@ strike_mode = st.selectbox(
 )
 st.write(f"Selected: {strike_mode}{option_side}")
 
+trader = PaperTrader()
+
 if st.button("Run Scanner"):
+    
+st.subheader("Paper Trading")
+if st.button("Paper Buy"):
+    trader.buy(symbol, 500, 1)
+    st.success("Paper Buy Executed")
+
+if st.button("Paper Sell"):
+    trader.sell(530)
+    st.success("Paper Sell Executed")
+
+st.write("Balance:", trader.balance)
+    
 
     data = get_signals(symbol)
 
