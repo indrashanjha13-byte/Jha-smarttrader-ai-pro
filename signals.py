@@ -11,8 +11,8 @@ def get_signals(symbol):
         interval="15m",
         auto_adjust=False
     )
-print("Symbol:", symbol)
-print(df.tail())
+    print("Symbol:", symbol)
+    print(df.yail())
 
     if df.empty:
         return {"error": "No data"}
