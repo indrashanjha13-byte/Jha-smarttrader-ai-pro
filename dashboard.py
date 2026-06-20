@@ -50,7 +50,6 @@ if st.button("Run Scanner"):
             data["MACD_SIGNAL"],
             data["Volume"],
             data["AVG_VOLUME"],
-            data["Close"]
         )
 
 
