@@ -87,6 +87,6 @@ def get_signals(symbol):
         "SUPERTREND": float(latest["ST_DIRECTION"]),
 
         "Volume": float(latest["Volume"]),
-        "AVG_VOLUME": float(latest["AVG_VOLUME"])
-        "Close": float(latest["Close"])
+        "AVG_VOLUME": float(latest["AVG_VOLUME"]),
+        "Close": float(latest["Close"]),
 }
