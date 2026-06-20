@@ -12,6 +12,7 @@ def get_signals(symbol):
         auto_adjust=False
     )
     print("Symbol:", symbol)
+    print("Rows =", len(df))
     print(df.tail())
 
     if df.empty:
