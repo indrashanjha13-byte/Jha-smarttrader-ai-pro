@@ -7,10 +7,12 @@ def get_signals(symbol):
 
     df = yf.download(
         symbol,
-        period="60d",
-        interval="5m",
+        period="30d",
+        interval="15m",
         auto_adjust=False
     )
+print("Symbol:", symbol)
+print(df.tail())
 
     if df.empty:
         return {"error": "No data"}
@@ -86,5 +88,5 @@ def get_signals(symbol):
 
         "Volume": float(latest["Volume"]),
         "AVG_VOLUME": float(latest["AVG_VOLUME"])
-
-    }
+        "Close": float(latest["Close"])
+}
