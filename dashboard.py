@@ -39,9 +39,8 @@ st.write(f"Selected: {strike_mode}{option_side}")
 
 trader = PaperTrader()
 
-if st.button("Run Scanner"):
-    
 st.subheader("Paper Trading")
+
 if st.button("Paper Buy"):
     trader.buy(symbol, 500, 1)
     st.success("Paper Buy Executed")
@@ -51,8 +50,8 @@ if st.button("Paper Sell"):
     st.success("Paper Sell Executed")
 
 st.write("Balance:", trader.balance)
-    
 
+if st.button("Run Scanner"):
     data = get_signals(symbol)
 
     if "error" in data:
@@ -103,8 +102,6 @@ st.write("Balance:", trader.balance)
        # st.write("Entry:", result["entry"])
        # st.write("Stop Loss:", result["stoploss"])
        # st.write("Target:", result["target"])
-
-import streamlit as st
 
 st.header("SmartTrader AI Pro Dashboard")
 
