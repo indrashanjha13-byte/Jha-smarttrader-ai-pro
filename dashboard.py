@@ -20,11 +20,7 @@ if logo_path.exists():
 st.title("📈 SmartTrader AI Pro")
 symbol = st.selectbox(
     "Symbol",
-    "BANKNIFTY"
-    "NIFTY"
-    "RELIANCE"
-    "TCS"
-    "INFY"
+    ["^NSEI", "^NSEBANK", "RELIANCE.NS", "TCS.NS", "INFY.NS"]
 )
 # Option Selection
 st.subheader("option Selection")
