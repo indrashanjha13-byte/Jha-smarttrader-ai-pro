@@ -3,6 +3,7 @@ from PIL import Image
 import streamlit as st
 from signals import get_signals
 from strategy import generate_signal
+from ai_signal_ranker import signal_score
 
 st.set_page_config(
     page_title="SmartTrader AI Pro",
@@ -51,9 +52,17 @@ if st.button("Run Scanner"):
             data["Volume"],
             data["AVG_VOLUME"],
         )
+        volume_ratio = data["Volume"] / data["AVG_VOLUME"]
+        trend = "UP" if data["SUPERTREND"] > 0 else "DOWN"
+        score = signal_score(
+            data["RSI"],
+            volume_ratio,
+            trend
+        )
+        
 
 
-        col1,col2,col3 = st.columns(3)
+        col1,col2,col3,col4 = st.columns(4)
 
 
         col1.metric(
@@ -69,6 +78,10 @@ if st.button("Run Scanner"):
         col3.metric(
             "RSI",
             round(data["RSI"],2)
+        )
+        col4.metric(
+            "AI Score",
+            score
         )
 
 
