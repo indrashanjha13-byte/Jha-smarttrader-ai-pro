@@ -58,7 +58,7 @@ if st.button("Run Scanner"):
 
         col1.metric(
             "Signal",
-            result["signal"]
+            result
         )
 
         col2.metric(
@@ -72,9 +72,9 @@ if st.button("Run Scanner"):
         )
 
 
-        st.write("Entry:", result["entry"])
-        st.write("Stop Loss:", result["stoploss"])
-        st.write("Target:", result["target"])
+       # st.write("Entry:", result["entry"])
+       # st.write("Stop Loss:", result["stoploss"])
+       # st.write("Target:", result["target"])
 
 import streamlit as st
 
