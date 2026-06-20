@@ -5,6 +5,7 @@ from signals import get_signals
 from strategy import generate_signal
 from ai_signal_ranker import signal_score
 from paper_trading import PaperTrader
+from telegram_bot import send_alert
 
 st.set_page_config(
     page_title="SmartTrader AI Pro",
@@ -60,12 +61,18 @@ if st.button("Run Scanner"):
     else:
 
         result = generate_signal(
-            data["SUPERTREND"],
-            data["MACD"],
-            data["MACD_SIGNAL"],
-            data["Volume"],
-            data["AVG_VOLUME"],
-        )
+    data["SUPERTREND"],
+    data["MACD"],
+    data["MACD_SIGNAL"],
+    data["Volume"],
+    data["AVG_VOLUME"],
+)
+
+if result == "BUY":
+    send_alert(f"BUY Signal on {symbol}")
+
+elif result == "SELL":
+    send_alert(f"SELL Signal on {symbol}")
         volume_ratio = data["Volume"] / data["AVG_VOLUME"]
         trend = "UP" if data["SUPERTREND"] > 0 else "DOWN"
         score = signal_score(
