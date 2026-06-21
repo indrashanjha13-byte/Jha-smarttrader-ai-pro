@@ -10,6 +10,7 @@ from telegram_bot import send_alert
 from portfolio import update_position
 from report import generate_report
 from portfolio_manager import can_trade
+from auto_trader import place_trade
 
 st.set_page_config(
     page_title="SmartTrader AI Pro",
@@ -77,6 +78,19 @@ if st.button("Run Scanner"):
 
         elif result == "SELL":
             send_alert(f"SELL Signal on {symbol}")
+            if result == "BUY":
+    place_trade(
+        "BUY",
+        symbol,
+        1
+    )
+
+elif result == "SELL":
+    place_trade(
+        "SELL",
+        symbol,
+        1
+    )
 
         volume_ratio = data["Volume"] / data["AVG_VOLUME"] if data["AVG_VOLUME"] > 0 else 1
 
