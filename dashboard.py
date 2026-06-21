@@ -82,31 +82,14 @@ score = signal_score(
     data["RSI"],
     volume_ratio,
     trend
-)        
-       
+)
 
+col1,col2,col3,col4 = st.columns(4)
 
-        col1,col2,col3,col4 = st.columns(4)
-
-
-        col1.metric(
-            "Signal",
-            result
-        )
-
-        col2.metric(
-            "MACD",
-            round(data["MACD"],2)
-        )
-
-        col3.metric(
-            "RSI",
-            round(data["RSI"],2)
-        )
-        col4.metric(
-            "AI Score",
-            score
-        )
+col1.metric("Signal", result)
+col2.metric("MACD", round(data["MACD"],2))
+col3.metric("RSI", round(data["RSI"],2))
+col4.metric("AI Score", score)
 
 
        # st.write("Entry:", result["entry"])
