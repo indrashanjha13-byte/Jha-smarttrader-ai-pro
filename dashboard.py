@@ -62,12 +62,13 @@ if st.button("Run Scanner"):
     else:
 
         result = generate_signal(
-    data["SUPERTREND"],
-    data["MACD"],
-    data["MACD_SIGNAL"],
-    data["Volume"],
-    data["AVG_VOLUME"],
+            data["SUPERTREND"],
+            data["MACD"],
+            data["MACD_SIGNAL"],
+            data["VOLUME"],
+            data["AVG_VOLUME"],
 )
+        
 if result == "BUY":
     send_alert(f"BUY Signal on {symbol}")
 
