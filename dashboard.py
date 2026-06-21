@@ -6,7 +6,6 @@ from strategy import generate_signal
 from ai_signal_ranker import signal_score
 from paper_trading import PaperTrader
 from telegram_bot import send_alert
-from strategy import scalper_signal
 
 st.set_page_config(
     page_title="SmartTrader AI Pro",
@@ -65,32 +64,34 @@ if st.button("Run Scanner"):
             data["SUPERTREND"],
             data["MACD"],
             data["MACD_SIGNAL"],
-            data["VOLUME"],
+            data["Volume"],
             data["AVG_VOLUME"],
         )
+
+        if result == "BUY":
+            send_alert(f"BUY Signal on {symbol}")
+
+        elif result == "SELL":
+            send_alert(f"SELL Signal on {symbol}")
+
+        volume_ratio = data["Volume"] / data["AVG_VOLUME"]
+
+        trend = "UP" if data["SUPERTREND"] > 0 else "DOWN"
+
+        score = signal_score(
+            data["RSI"],
+            volume_ratio,
+            trend
+        )
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        col1.metric("Signal", result)
+        col2.metric("MACD", round(data["MACD"], 2))
+        col3.metric("RSI", round(data["RSI"], 2))
+        col4.metric("AI Score", score)
+
         
-if result == "BUY":
-    send_alert(f"BUY Signal on {symbol}")
-
-elif result == "SELL":
-    send_alert(f"SELL Signal on {symbol}")
-
-volume_ratio = data["Volume"] / data["AVG_VOLUME"]
-
-trend = "UP" if data["SUPERTREND"] > 0 else "DOWN"
-
-score = signal_score(
-    data["RSI"],
-    volume_ratio,
-    trend
-)
-
-col1,col2,col3,col4 = st.columns(4)
-
-col1.metric("Signal", result)
-col2.metric("MACD", round(data["MACD"],2))
-col3.metric("RSI", round(data["RSI"],2))
-col4.metric("AI Score", score)
 
 
        # st.write("Entry:", result["entry"])
