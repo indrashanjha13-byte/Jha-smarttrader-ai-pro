@@ -91,24 +91,23 @@ elif result == "SELL":
         symbol,
         1
     )
-
 volume_ratio = data["Volume"] / data["AVG_VOLUME"] if data["AVG_VOLUME"] > 0 else 1
 
+trend = "UP" if data["SUPERTREND"] > 0 else "DOWN"
 
-        trend = "UP" if data["SUPERTREND"] > 0 else "DOWN"
+score = signal_score(
+    data["RSI"],
+    volume_ratio,
+    trend
+)
 
-        score = signal_score(
-            data["RSI"],
-            volume_ratio,
-            trend
-        )
+col1, col2, col3, col4 = st.columns(4)
 
-        col1, col2, col3, col4 = st.columns(4)
+col1.metric("Signal", result)
+col2.metric("MACD", round(data["MACD"], 2))
+col3.metric("RSI", round(data["RSI"], 2))
+col4.metric("AI Score", score)
 
-        col1.metric("Signal", result)
-        col2.metric("MACD", round(data["MACD"], 2))
-        col3.metric("RSI", round(data["RSI"], 2))
-        col4.metric("AI Score", score)
 
         
 
