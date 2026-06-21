@@ -67,7 +67,7 @@ if st.button("Run Scanner"):
             data["MACD_SIGNAL"],
             data["VOLUME"],
             data["AVG_VOLUME"],
-)
+        )
         
 if result == "BUY":
     send_alert(f"BUY Signal on {symbol}")
