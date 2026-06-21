@@ -59,19 +59,18 @@ st.write("Balance:", trader.balance)
 
 if st.button("Run Scanner"):
     data = get_signals(symbol)
+if "error" in data:
+    st.error(data["error"])
 
-    if "error" in data:
-        st.error(data["error"])
+else:
 
-    else:
-
-result = generate_signal(
-    data["SUPERTREND"],
-    data["MACD"],
-    data["MACD_SIGNAL"],
-    data["Volume"],
-    data["AVG_VOLUME"],
-)
+    result = generate_signal(
+        data["SUPERTREND"],
+        data["MACD"],
+        data["MACD_SIGNAL"],
+        data["Volume"],
+        data["AVG_VOLUME"],
+    )
 
 if result == "BUY":
     send_alert(f"BUY Signal on {symbol}")
