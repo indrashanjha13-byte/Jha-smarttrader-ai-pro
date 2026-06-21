@@ -111,6 +111,8 @@ st.write("SuperTrend + MACD + Volume Filter")
 st.subheader("Portfolio")
 update_position(symbol, 1)
 st.success("Portfolio Updated")
+st.write("Current Symbol:", symbol)
+st.write("Quantity:", 1)
 
 st.subheader("Reports")
 report = generate_report(
