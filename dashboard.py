@@ -65,20 +65,21 @@ if st.button("Run Scanner"):
 
     else:
 
-        result = generate_signal(
-            data["SUPERTREND"],
-            data["MACD"],
-            data["MACD_SIGNAL"],
-            data["Volume"],
-            data["AVG_VOLUME"],
-        )
+result = generate_signal(
+    data["SUPERTREND"],
+    data["MACD"],
+    data["MACD_SIGNAL"],
+    data["Volume"],
+    data["AVG_VOLUME"],
+)
 
-        if result == "BUY":
-            send_alert(f"BUY Signal on {symbol}")
+if result == "BUY":
+    send_alert(f"BUY Signal on {symbol}")
 
-        elif result == "SELL":
-            send_alert(f"SELL Signal on {symbol}")
-            if result == "BUY":
+elif result == "SELL":
+    send_alert(f"SELL Signal on {symbol}")
+
+if result == "BUY":
     place_trade(
         "BUY",
         symbol,
@@ -92,7 +93,8 @@ elif result == "SELL":
         1
     )
 
-        volume_ratio = data["Volume"] / data["AVG_VOLUME"] if data["AVG_VOLUME"] > 0 else 1
+volume_ratio = data["Volume"] / data["AVG_VOLUME"] if data["AVG_VOLUME"] > 0 else 1
+
 
         trend = "UP" if data["SUPERTREND"] > 0 else "DOWN"
 
