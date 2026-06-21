@@ -58,58 +58,53 @@ if st.button("Paper Sell"):
 st.write("Balance:", trader.balance)
 
 if st.button("Run Scanner"):
+
     data = get_signals(symbol)
-if "error" in data:
-    st.error(data["error"])
 
-else:
+    if "error" in data:
+        st.error(data["error"])
 
-    result = generate_signal(
-        data["SUPERTREND"],
-        data["MACD"],
-        data["MACD_SIGNAL"],
-        data["Volume"],
-        data["AVG_VOLUME"],
-    )
+    else:
 
-if result == "BUY":
-    send_alert(f"BUY Signal on {symbol}")
+        result = generate_signal(
+            data["SUPERTREND"],
+            data["MACD"],
+            data["MACD_SIGNAL"],
+            data["Volume"],
+            data["AVG_VOLUME"],
+        )
 
-elif result == "SELL":
-    send_alert(f"SELL Signal on {symbol}")
+        if result == "BUY":
+            send_alert(f"BUY Signal on {symbol}")
+            place_trade("BUY", symbol, 1)
 
-if result == "BUY":
-    place_trade(
-        "BUY",
-        symbol,
-        1
-    )
+        elif result == "SELL":
+            send_alert(f"SELL Signal on {symbol}")
+            place_trade("SELL", symbol, 1)
 
-elif result == "SELL":
-    place_trade(
-        "SELL",
-        symbol,
-        1
-    )
-volume_ratio = data["Volume"] / data["AVG_VOLUME"] if data["AVG_VOLUME"] > 0 else 1
+        volume_ratio = (
+            data["Volume"] / data["AVG_VOLUME"]
+            if data["AVG_VOLUME"] > 0 else 1
+        )
 
-trend = "UP" if data["SUPERTREND"] > 0 else "DOWN"
+        trend = (
+            "UP"
+            if data["SUPERTREND"] > 0
+            else "DOWN"
+        )
 
-score = signal_score(
-    data["RSI"],
-    volume_ratio,
-    trend
-)
+        score = signal_score(
+            data["RSI"],
+            volume_ratio,
+            trend
+        )
 
-col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4 = st.columns(4)
 
-col1.metric("Signal", result)
-col2.metric("MACD", round(data["MACD"], 2))
-col3.metric("RSI", round(data["RSI"], 2))
-col4.metric("AI Score", score)
-
-
-        
+        col1.metric("Signal", result)
+        col2.metric("MACD", round(data["MACD"], 2))
+        col3.metric("RSI", round(data["RSI"], 2))
+        col4.metric("AI Score", score)
 
 
        # st.write("Entry:", result["entry"])
