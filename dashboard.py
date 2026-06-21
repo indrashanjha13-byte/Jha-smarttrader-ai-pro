@@ -74,7 +74,7 @@ if st.button("Run Scanner"):
         elif result == "SELL":
             send_alert(f"SELL Signal on {symbol}")
 
-        volume_ratio = data["Volume"] / data["AVG_VOLUME"]
+        volume_ratio = data["Volume"] / data["AVG_VOLUME"] if data["AVG_VOLUME"] > 0 else 1
 
         trend = "UP" if data["SUPERTREND"] > 0 else "DOWN"
 
