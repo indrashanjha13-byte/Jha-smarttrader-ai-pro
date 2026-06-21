@@ -8,6 +8,7 @@ from paper_trading import PaperTrader
 from telegram_bot import send_alert
 from portfolio import update_position
 from report import generate_report
+from pandas as pd
 
 st.set_page_config(
     page_title="SmartTrader AI Pro",
@@ -126,4 +127,10 @@ report = generate_report(
     broker_status="Connected"
 )
 st.text(report)
+st.subheader("Trade History")
 
+try:
+    df = pd.read_csv("trade_history.csv")
+    st.dataframe(df)
+except:
+    st.info("No Trade History Found")
