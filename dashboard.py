@@ -6,6 +6,8 @@ from strategy import generate_signal
 from ai_signal_ranker import signal_score
 from paper_trading import PaperTrader
 from telegram_bot import send_alert
+from portfolio import update_position
+from report import generate_report
 
 st.set_page_config(
     page_title="SmartTrader AI Pro",
@@ -107,7 +109,8 @@ st.subheader("Strategy")
 st.write("SuperTrend + MACD + Volume Filter")
 
 st.subheader("Portfolio")
-st.write("Portfolio Manager Loaded")
+update_position(symbol, 1)
+st.success("Portfolio Updated")
 
 st.subheader("Reports")
 st.write("Trading Report")
