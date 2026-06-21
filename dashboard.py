@@ -9,6 +9,7 @@ from paper_trading import PaperTrader
 from telegram_bot import send_alert
 from portfolio import update_position
 from report import generate_report
+from portfolio_manager import can_trade
 
 st.set_page_config(
     page_title="SmartTrader AI Pro",
@@ -134,3 +135,16 @@ try:
     st.dataframe(df)
 except:
     st.info("No Trade History Found")
+
+st.subheader("Risk Manager")
+
+open_positions = st.number_input(
+    "Open Positions",
+    min_value=0,
+    value=0
+)
+
+if can_trade(open_positions):
+    st.success("Trade Allowed")
+else:
+    st.error("Maximum Open Trades Reached")
