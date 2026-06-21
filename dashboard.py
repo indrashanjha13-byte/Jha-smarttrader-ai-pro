@@ -68,20 +68,22 @@ if st.button("Run Scanner"):
     data["Volume"],
     data["AVG_VOLUME"],
 )
-
 if result == "BUY":
     send_alert(f"BUY Signal on {symbol}")
 
 elif result == "SELL":
     send_alert(f"SELL Signal on {symbol}")
-        volume_ratio = data["Volume"] / data["AVG_VOLUME"]
-        trend = "UP" if data["SUPERTREND"] > 0 else "DOWN"
-        score = signal_score(
-            data["RSI"],
-            volume_ratio,
-            trend
-        )
-        
+
+volume_ratio = data["Volume"] / data["AVG_VOLUME"]
+
+trend = "UP" if data["SUPERTREND"] > 0 else "DOWN"
+
+score = signal_score(
+    data["RSI"],
+    volume_ratio,
+    trend
+)        
+       
 
 
         col1,col2,col3,col4 = st.columns(4)
