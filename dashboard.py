@@ -1,6 +1,7 @@
 from pathlib import Path
 from PIL import Image
 import streamlit as st
+import pandas as pd
 from signals import get_signals
 from strategy import generate_signal
 from ai_signal_ranker import signal_score
@@ -8,7 +9,6 @@ from paper_trading import PaperTrader
 from telegram_bot import send_alert
 from portfolio import update_position
 from report import generate_report
-from pandas as pd
 
 st.set_page_config(
     page_title="SmartTrader AI Pro",
