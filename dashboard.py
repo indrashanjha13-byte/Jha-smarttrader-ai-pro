@@ -6,6 +6,7 @@ from strategy import generate_signal
 from ai_signal_ranker import signal_score
 from paper_trading import PaperTrader
 from telegram_bot import send_alert
+from strategy import scalper_signal
 
 st.set_page_config(
     page_title="SmartTrader AI Pro",
