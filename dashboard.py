@@ -113,4 +113,15 @@ update_position(symbol, 1)
 st.success("Portfolio Updated")
 
 st.subheader("Reports")
-st.write("Trading Report")
+report = generate_report(
+    total_trades=10,
+    winning_trades=7,
+    losing_trades=3,
+    net_orofit=5000,
+    daily_pnl=500,
+    monthly_pnl=5000,
+    open_positions=1,
+    broker_status="Connected"
+)
+st.text(report)
+
