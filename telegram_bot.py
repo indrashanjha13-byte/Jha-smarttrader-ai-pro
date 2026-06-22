@@ -11,13 +11,6 @@ def send_alert(message):
         f"{token}/sendMessage"
     )
 
-    requests.post(
-        url,
-        data={
-            "chat_id": chat_id,
-            "text": message
-        }
-    )
 response = requests.post(
     url,
     data={
