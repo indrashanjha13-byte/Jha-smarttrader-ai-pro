@@ -199,3 +199,13 @@ try:
 
 except:
     st.info("No Analytics Available")
+st.subheader("Trade Analytics")
+
+try:
+
+    total_trades = len(df)
+
+    st.write("Total Trades:", total_trades)
+
+except:
+    st.info("No Analytics Data")
