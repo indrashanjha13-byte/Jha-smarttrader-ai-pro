@@ -325,3 +325,17 @@ st.write(
     "Status:",
     "ON" if is_enabled() else "OFF"
 )
+st.subheader("Broker Login Panel")
+
+broker = st.selectbox(
+    "Select Broker",
+    ["Zerodha", "Angel One", "Upstox", Kotak Neo"]
+)
+
+api_key = st.text_input(
+    "API Key",
+    type="password"
+)
+
+if st.button("Connect Broker"):
+    st.success(f"{broker} Connected")
