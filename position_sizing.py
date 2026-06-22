@@ -1,16 +1,22 @@
-def create_features(df):
+MAX_RISK_PER_TRADE = 2
 
-    df["EMA_DIFF"] = (
-        df["EMA20"] - df["EMA50"]
+def calculate_qty(
+    capital,
+    entry_price,
+    stoploss_price
+):
+
+    risk_amount = (
+        capital * MAX_RISK_PER_TRADE
+    ) / 100
+
+    risk_per_share = (
+        entry_price - stoploss_price
     )
 
-    df["RSI_NORM"] = (
-        df["RSI"] / 100
+    qty = int(
+        risk_amount /
+        risk_per_share
     )
 
-    df["VOL_RATIO"] = (
-        df["Volume"] /
-        df["Volume"].rolling(20).mean()
-    )
-
-    return df
+    return qty
