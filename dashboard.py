@@ -329,7 +329,7 @@ st.subheader("Broker Login Panel")
 
 broker = st.selectbox(
     "Select Broker",
-    ["Zerodha", "Angel One", "Upstox", "Kotak Neo"]
+    ["Kotak Neo", "Angel One", "Upstox", "Zerodha"]
 )
 
 api_key = st.text_input(
