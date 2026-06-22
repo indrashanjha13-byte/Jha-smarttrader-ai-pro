@@ -1,19 +1,29 @@
 import pandas as pd
 
-df = pd.read_csv(
-    "trade_history.csv"
-)
+def get_trade_stats():
 
-total_trades = len(df)
+    try:
+        df = pd.read_csv("trade_history.csv")
 
-winning_trades = len(
-    df[df["PnL"] > 0]
-)
+        total_trades = len(df)
 
-win_rate = (
-    winning_trades /
-    total_trades
-) * 100
-df["Equity"] = (
-    df["PnL"].cumsum()
-)
+        buy_trades = len(
+            df[df["Side"] == "BUY"]
+        )
+
+        sell_trades = len(
+            df[df["Side"] == "SELL"]
+        )
+
+        return {
+            "total": total_trades,
+            "buy": buy_trades,
+            "sell": sell_trades
+        }
+
+    except:
+        return {
+            "total": 0,
+            "buy": 0,
+            "sell": 0
+        }
