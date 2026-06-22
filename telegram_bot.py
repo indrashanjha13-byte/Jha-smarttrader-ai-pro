@@ -18,3 +18,12 @@ def send_alert(message):
             "text": message
         }
     )
+response = requests.post(
+    url,
+    data={
+        "chat_id": chat_id,
+        "text": message
+    }
+)
+
+print(response.text)
