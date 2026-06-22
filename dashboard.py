@@ -251,3 +251,26 @@ try:
 
 except:
     st.info("No Chart Data")    
+st.subheader("Live Market Statistics")
+
+try:
+
+    data = get_signals(symbol)
+
+    st.metric(
+        "RSI",
+        round(data["RSI"], 2)
+    )
+
+    st.metric(
+        "MACD",
+        round(data["MACD"], 2)
+    )
+
+    st.metric(
+        "Volume",
+        int(data["Volume"])
+    )
+
+except:
+    st.info("Market Data Not Available")
