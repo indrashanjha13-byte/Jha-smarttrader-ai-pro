@@ -204,6 +204,7 @@ stats = get_trade_stats()
 st.write("Total Trades:", stats["total"])
 st.write("Buy Trades:", stats["buy"])
 st.write("Sell Trades:", stats["sell"])
+st.write("Win Rate:", stats["win_rate"], "%")
 
 try:
 
