@@ -14,6 +14,8 @@ from auto_trader import place_trade
 from position_sizing import calculate_qty
 from trade_analytics import get_trade_stats
 from ai_predict import predict_trade
+import plotly.graph_objects as go
+import yfinance as yf
 
 st.set_page_config(
     page_title="SmartTrader AI Pro",
@@ -274,3 +276,35 @@ try:
 
 except:
     st.info("Market Data Not Available")
+except:
+    st.info("Market Data Not Available")
+
+st.subheader("Live Market Chart")
+
+try:
+
+    chart_data = yf.download(
+        symbol,
+        period="5d",
+        interval="15m"
+    )
+
+    fig = go.Figure(
+        data=[
+            go.Candlestick(
+                x=chart_data.index,
+                open=chart_data["Open"],
+                high=chart_data["High"],
+                low=chart_data["Low"],
+                close=chart_data["Close"]
+            )
+        ]
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
+
+except:
+    st.info("Chart Not Available")
