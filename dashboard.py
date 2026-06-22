@@ -21,6 +21,7 @@ from auto_mode import (
     disable_auto,
     is_enabled
 )
+from datetime import datetime
 
 st.set_page_config(
     page_title="SmartTrader AI Pro",
@@ -339,3 +340,5 @@ api_key = st.text_input(
 
 if st.button("Connect Broker"):
     st.success(f"{broker} Connected")
+st.success("🟢 Software Running")
+st.write("Last Check:", datetime.now())
