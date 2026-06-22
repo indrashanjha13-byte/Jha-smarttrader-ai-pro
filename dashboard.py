@@ -13,6 +13,7 @@ from portfolio_manager import can_trade
 from auto_trader import place_trade
 from position_sizing import calculate_qty
 from trade_analytics import get_trade_stats
+from ai_predict import predict_trade
 
 st.set_page_config(
     page_title="SmartTrader AI Pro",
@@ -205,7 +206,12 @@ st.write("Total Trades:", stats["total"])
 st.write("Buy Trades:", stats["buy"])
 st.write("Sell Trades:", stats["sell"])
 st.write("Win Rate:", stats["win_rate"], "%")
+st.subheader("AI Prediction")
 
+prediction, confidence = predict_trade()
+
+st.write("Prediction:", prediction)
+st.write("Confidence:", confidence, "%")
 try:
 
     total_trades = len(df)
