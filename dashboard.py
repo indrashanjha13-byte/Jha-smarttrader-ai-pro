@@ -23,6 +23,7 @@ from auto_mode import (
 )
 from datetime import datetime
 
+
 st.set_page_config(
     page_title="SmartTrader AI Pro",
     layout="wide"
