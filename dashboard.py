@@ -120,7 +120,7 @@ st.button("Stop Trading")
 st.subheader("Strategy")
 st.write("SuperTrend + MACD + Volume Filter")
 
-st.subheader("Add To Portfolio"):
+st.subheader("Add To Portfolio")
 update_position(symbol, 1)
 st.success("Portfolio Updated")
 st.write("Current Symbol:", symbol)
