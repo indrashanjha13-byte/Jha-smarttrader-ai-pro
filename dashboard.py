@@ -120,7 +120,7 @@ st.button("Stop Trading")
 st.subheader("Strategy")
 st.write("SuperTrend + MACD + Volume Filter")
 
-st.subheader("Portfolio")
+st.subheader("Add To Portfolio"):
 update_position(symbol, 1)
 st.success("Portfolio Updated")
 st.write("Current Symbol:", symbol)
@@ -183,3 +183,19 @@ qty = calculate_qty(
 )
 
 st.write("Suggested Quantity:", qty)
+st.subheader("Trade Analytics")
+
+try:
+    df = pd.read_csv("trade_history.csv")
+
+    total_trades = len(df)
+
+    buy_trades = len(df[df["Side"] == "BUY"])
+    sell_trades = len(df[df["Side"] == "SELL"])
+
+    st.write("Total Trades:", total_trades)
+    st.write("Buy Trades:", buy_trades)
+    st.write("Sell Trades:", sell_trades)
+
+except:
+    st.info("No Analytics Available")
