@@ -1,16 +1,19 @@
-def create_features(df):
+import pandas as pd
 
-    df["EMA_DIFF"] = (
-        df["EMA20"] - df["EMA50"]
-    )
+df = pd.read_csv(
+    "trade_history.csv"
+)
 
-    df["RSI_NORM"] = (
-        df["RSI"] / 100
-    )
+total_trades = len(df)
 
-    df["VOL_RATIO"] = (
-        df["Volume"] /
-        df["Volume"].rolling(20).mean()
-    )
+winning_trades = len(
+    df[df["PnL"] > 0]
+)
 
-    return df
+win_rate = (
+    winning_trades /
+    total_trades
+) * 100
+df["Equity"] = (
+    df["PnL"].cumsum()
+)
