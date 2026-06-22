@@ -11,6 +11,7 @@ from portfolio import update_position
 from report import generate_report
 from portfolio_manager import can_trade
 from auto_trader import place_trade
+from position_sizing import calculate_qty
 
 st.set_page_config(
     page_title="SmartTrader AI Pro",
@@ -157,3 +158,28 @@ if can_trade(open_positions):
     st.success("Trade Allowed")
 else:
     st.error("Maximum Open Trades Reached")
+    
+st.subheader("Position Sizing")
+
+capital = st.number_input(
+    "Capital",
+    value=100000
+)
+
+entry_price = st.number_input(
+    "Entry Price",
+    value=500
+)
+
+stoploss_price = st.number_input(
+    "Stoploss Price",
+    value=480
+)
+
+qty = calculate_qty(
+    capital,
+    entry_price,
+    stoploss_price
+)
+
+st.write("Suggested Quantity:", qty)
