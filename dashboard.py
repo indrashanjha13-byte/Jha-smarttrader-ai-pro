@@ -12,6 +12,7 @@ from report import generate_report
 from portfolio_manager import can_trade
 from auto_trader import place_trade
 from position_sizing import calculate_qty
+from trade_analytics import get_trade_stats
 
 st.set_page_config(
     page_title="SmartTrader AI Pro",
@@ -198,21 +199,11 @@ qty = calculate_qty(
 st.write("Suggested Quantity:", qty)
 st.subheader("Trade Analytics")
 
-try:
-    df = pd.read_csv("trade_history.csv")
+stats = get_trade_stats()
 
-    total_trades = len(df)
-
-    buy_trades = len(df[df["Side"] == "BUY"])
-    sell_trades = len(df[df["Side"] == "SELL"])
-
-    st.write("Total Trades:", total_trades)
-    st.write("Buy Trades:", buy_trades)
-    st.write("Sell Trades:", sell_trades)
-
-except:
-    st.info("No Analytics Available")
-st.subheader("Trade Analytics")
+st.write("Total Trades:", stats["total"])
+st.write("Buy Trades:", stats["buy"])
+st.write("Sell Trades:", stats["sell"])
 
 try:
 
