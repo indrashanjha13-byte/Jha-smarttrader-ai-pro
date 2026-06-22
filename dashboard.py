@@ -16,6 +16,11 @@ from trade_analytics import get_trade_stats
 from ai_predict import predict_trade
 import plotly.graph_objects as go
 import yfinance as yf
+from auto_mode import (
+    enable_auto,
+    disable_auto,
+    is_enabled
+)
 
 st.set_page_config(
     page_title="SmartTrader AI Pro",
@@ -306,3 +311,17 @@ try:
 
 except:
     st.info("Chart Not Available")
+st.subheader("Auto Trading Control")
+
+if st.button("Enable Auto Trading"):
+    enable_auto()
+    st.success("Auto Trading Enabled")
+
+if st.button("Disable Auto Trading"):
+    disable_auto()
+    st.warning("Auto Trading Disabled")
+
+st.write(
+    "Status:",
+    "ON" if is_enabled() else "OFF"
+)
