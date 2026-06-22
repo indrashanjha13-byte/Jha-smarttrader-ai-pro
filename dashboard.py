@@ -106,16 +106,20 @@ if st.button("Run Scanner"):
         col2.metric("MACD", round(data["MACD"], 2))
         col3.metric("RSI", round(data["RSI"], 2))
         col4.metric("AI Score", score)
-st.subheader("AI Trade Filter")
+ st.subheader("AI Trade Filter")
 
-if score >= 70:
-    st.success("High Quality Trade")
+try:
+    if score >= 70:
+        st.success("High Quality Trade")
 
-elif score >= 50:
-    st.warning("Average Quality Trade")
+    elif score >= 50:
+        st.warning("Average Quality Trade")
 
-else:
-    st.error("Avoid This Trade")
+    else:
+        st.error("Avoid This Trade")
+
+except:
+    st.info("Run Scanner First")       
 
        # st.write("Entry:", result["entry"])
        # st.write("Stop Loss:", result["stoploss"])
