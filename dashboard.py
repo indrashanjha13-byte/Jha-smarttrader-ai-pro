@@ -276,8 +276,6 @@ try:
 
 except:
     st.info("Market Data Not Available")
-except:
-    st.info("Market Data Not Available")
 
 st.subheader("Live Market Chart")
 
