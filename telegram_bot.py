@@ -17,5 +17,4 @@ def send_alert(message):
         "text": message
     }
 )
-
-print(response.text)
+    print(response.text)
