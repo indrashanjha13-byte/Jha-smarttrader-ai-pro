@@ -222,3 +222,34 @@ try:
 
 except:
     st.info("No Analytics Data")
+st.subheader("Live Profit / Loss")
+
+try:
+    df = pd.read_csv("trade_history.csv")
+
+    buy_count = len(df[df["Side"] == "BUY"])
+    sell_count = len(df[df["Side"] == "SELL"])
+
+    total_pnl = (sell_count - buy_count) * 30
+
+    st.metric(
+        "Net Profit/Loss",
+        f"₹{total_pnl}"
+    )
+
+except:
+    st.info("No PnL Data Available")
+st.subheader("Live Equity Curve")
+
+try:
+    df = pd.read_csv("trade_history.csv")
+
+    df["Trade No"] = range(
+        1,
+        len(df) + 1
+    )
+
+    st.line_chart(df["Trade No"])
+
+except:
+    st.info("No Chart Data")    
