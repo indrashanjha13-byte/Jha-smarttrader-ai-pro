@@ -23,7 +23,7 @@ class PaperTrader:
             "qty": qty
         }
 
-        self.save_trade("BUY", symbol, price, qty)
+        self.save_trade("BUY", symbol, price, qty, 0)
 
         print(f"BUY {symbol} @ {price}")
 
@@ -45,14 +45,15 @@ class PaperTrader:
             "SELL",
             self.position["symbol"],
             price,
-            self.position["qty"]
+            self.position["qty"],
+            pnl
         )
 
         print(f"PNL = {pnl}")
 
         self.position = None
 
-    def save_trade(self, side, symbol, price, qty):
+    def save_trade(self, side, symbol, price, qty, pnl=0):
 
         with open(
             "trade_history.csv",
@@ -67,7 +68,8 @@ class PaperTrader:
                 side,
                 symbol,
                 price,
-                qty
+                qty,
+                pnl
             ])
 def check_exit(entry, current):
 
