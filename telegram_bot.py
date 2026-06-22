@@ -10,8 +10,7 @@ def send_alert(message):
         f"https://api.telegram.org/bot"
         f"{token}/sendMessage"
     )
-
-response = requests.post(
+   response = requests.post(
     url,
     data={
         "chat_id": chat_id,
@@ -19,4 +18,4 @@ response = requests.post(
     }
 )
 
-print(response.text)
+print(response.text) 
