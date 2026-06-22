@@ -342,3 +342,10 @@ if st.button("Connect Broker"):
     st.success(f"{broker} Connected")
 st.success("🟢 Software Running")
 st.write("Last Check:", datetime.now())
+try:
+    if data is not None:
+        st.success("🟢 Data Connected")
+    else:
+        st.error("🔴 Data Disconnected")
+except:
+    st.warning("🟡 Run Scanner First")
