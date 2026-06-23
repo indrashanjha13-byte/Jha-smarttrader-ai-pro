@@ -2,7 +2,7 @@ import requests
 
 def send_alert(message):
 
-    token = "YOUR_NEW_TOKEN"
+    token = "8652639978:AAE8OIx6Rt8TAlDyj0GCx1d6Tl1Vp-HAvPI"
     chat_id = "2019899357"
 
     url = (
