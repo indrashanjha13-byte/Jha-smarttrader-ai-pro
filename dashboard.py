@@ -171,8 +171,7 @@ st.write("Trade File Exists:", os.path.exists("trade_history.csv"))
 try:
     df = pd.read_csv("trade_history.csv")
     st.dataframe(df)
-except:
-    Exception as e:
+except Exception as e:
     st.error(str(e))
 
 st.subheader("Risk Manager")
