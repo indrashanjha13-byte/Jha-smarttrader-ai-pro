@@ -86,7 +86,7 @@ if st.button("Run Scanner"):
             data["Volume"],
             data["AVG_VOLUME"],
         )
-current_price = data["Close"]
+       current_price = data["Close"]
 
 # AUTO PAPER BUY
 if result == "BUY" and trader.position is None:
@@ -115,6 +115,7 @@ if trader.position:
 
         send_alert(
             f"AUTO EXIT {symbol} {exit_signal}"
+        ) 
         )
         if result == "BUY":
             send_alert(f"BUY Signal on {symbol}")
