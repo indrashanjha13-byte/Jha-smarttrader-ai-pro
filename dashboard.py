@@ -93,6 +93,19 @@ if st.button("Run Scanner"):
         if result == "BUY":
             send_alert(f"BUY Signal on {symbol}")
             place_trade("BUY", symbol, 1)
+            current_price = data["Close"]
+
+if result == "BUY" and trader.position is None:
+
+    trader.buy(
+        symbol,
+        current_price,
+        1
+    )
+
+    send_alert(
+        f"AUTO BUY {symbol} @ {current_price}"
+    )
 
         elif result == "SELL":
             send_alert(f"SELL Signal on {symbol}")
