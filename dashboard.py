@@ -74,80 +74,83 @@ if st.button("Paper Sell"):
 st.write("Balance:", trader.balance)
 
 if st.button("Run Scanner"):
+data = get_signals(symbol)
 
-    data = get_signals(symbol)
+if "error" in data:
+    st.error(data["error"])
 
-    if "error" in data:
-        st.error(data["error"])
+else:
 
-    else:
-
-        result = generate_signal(
-            data["SUPERTREND"],
-            data["MACD"],
-            data["MACD_SIGNAL"],
-            data["Volume"],
-            data["AVG_VOLUME"],
-
-        )      
-        if result == "BUY":
-            send_alert(f"BUY Signal on {symbol}")
-            place_trade("BUY", symbol, 1)
-  current_price = data["Close"]
-
-if result == "BUY" and trader.position is None:
-
-    trader.buy(
-        symbol,
-        current_price,
-        1
+    result = generate_signal(
+        data["SUPERTREND"],
+        data["MACD"],
+        data["MACD_SIGNAL"],
+        data["Volume"],
+        data["AVG_VOLUME"],
     )
 
-    send_alert(
-        f"AUTO BUY {symbol} @ {current_price}"
-    )          
-if trader.position:
+    current_price = data["Close"]
 
-    exit_signal = check_exit(
-        trader.position["entry"],
-        current_price
-    )
+    # AUTO PAPER BUY
+    if result == "BUY" and trader.position is None:
 
-    if exit_signal:
-
-        trader.sell(current_price)
+        trader.buy(
+            symbol,
+            current_price,
+            1
+        )
 
         send_alert(
-            f"AUTO EXIT {symbol} {exit_signal}"
-        )
-        elif result == "SELL":
-            send_alert(f"SELL Signal on {symbol}")
-            place_trade("SELL", symbol, 1)
-
-        volume_ratio = (
-            data["Volume"] / data["AVG_VOLUME"]
-            if data["AVG_VOLUME"] > 0 else 1
+            f"AUTO BUY {symbol} @ {current_price}"
         )
 
-        trend = (
-            "UP"
-            if data["SUPERTREND"] > 0
-            else "DOWN"
+    # AUTO EXIT
+    if trader.position:
+
+        exit_signal = check_exit(
+            trader.position["entry"],
+            current_price
         )
 
-        score = signal_score(
-            data["RSI"],
-            volume_ratio,
-            trend
-        )
+        if exit_signal:
 
-        col1, col2, col3, col4 = st.columns(4)
+            trader.sell(current_price)
 
-        col1.metric("Signal", result)
-        col2.metric("MACD", round(data["MACD"], 2))
-        col3.metric("RSI", round(data["RSI"], 2))
-        col4.metric("AI Score", score)
-        st.subheader("AI Trade Filter")
+            send_alert(
+                f"AUTO EXIT {symbol} {exit_signal}"
+            )
+
+    if result == "BUY":
+        send_alert(f"BUY Signal on {symbol}")
+
+    elif result == "SELL":
+        send_alert(f"SELL Signal on {symbol}")
+
+    volume_ratio = (
+        data["Volume"] / data["AVG_VOLUME"]
+        if data["AVG_VOLUME"] > 0 else 1
+    )
+
+    trend = (
+        "UP"
+        if data["SUPERTREND"] > 0
+        else "DOWN"
+    )
+
+    score = signal_score(
+        data["RSI"],
+        volume_ratio,
+        trend
+    )
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric("Signal", result)
+    col2.metric("MACD", round(data["MACD"], 2))
+    col3.metric("RSI", round(data["RSI"], 2))
+    col4.metric("AI Score", score)
+
+    st.subheader("AI Trade Filter")
 
 try:
     if score >= 70:
