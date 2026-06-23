@@ -172,9 +172,18 @@ except:
 
 st.header("SmartTrader AI Pro Dashboard")
 
-st.button("Start Trading")
-st.button("Stop Trading")
+if st.button("Start Trading"):
+    enable_auto()
+    st.success("Trading Started")
 
+if st.button("Stop Trading"):
+    disable_auto()
+    st.warning("Trading Stopped")
+
+st.write(
+    "Trading Status:",
+    "🟢 RUNNING" if is_enabled() else "🔴 STOPPED"
+)
 st.subheader("Strategy")
 st.write("SuperTrend + MACD + Volume Filter")
 
