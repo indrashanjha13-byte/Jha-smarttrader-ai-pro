@@ -74,10 +74,10 @@ if st.button("Paper Sell"):
 st.write("Balance:", trader.balance)
 
 if st.button("Run Scanner"):
-data = get_signals(symbol)
-
-if "error" in data:
-    st.error(data["error"])
+    data = get_signals(symbol)
+    
+    if "error" in data
+       st.error(data["error"])
 
 else:
 
