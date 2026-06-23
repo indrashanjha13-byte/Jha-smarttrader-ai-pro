@@ -172,7 +172,8 @@ try:
     df = pd.read_csv("trade_history.csv")
     st.dataframe(df)
 except:
-    st.info("No Trade History Found")
+    Exception as e:
+    st.error(str(e))
 
 st.subheader("Risk Manager")
 
