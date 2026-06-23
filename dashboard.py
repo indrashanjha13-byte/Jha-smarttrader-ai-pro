@@ -163,6 +163,10 @@ report = generate_report(
 )
 st.text(report)
 st.subheader("Trade History")
+import os
+
+st.write("Current Folder:", os.getcwd())
+st.write("Trade File Exists:", os.path.exists("trade_history.csv"))
 
 try:
     df = pd.read_csv("trade_history.csv")
