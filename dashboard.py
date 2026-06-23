@@ -74,57 +74,58 @@ if st.button("Paper Sell"):
 st.write("Balance:", trader.balance)
 
 if st.button("Run Scanner"):
+
     data = get_signals(symbol)
 
-if "error" in data:
-    st.error(data["error"])
+    if "error" in data:
+        st.error(data["error"])
 
-else:
+    else:
 
-    result = generate_signal(
-        data["SUPERTREND"],
-        data["MACD"],
-        data["MACD_SIGNAL"],
-        data["Volume"],
-        data["AVG_VOLUME"],
-    )
-
-    current_price = data["Close"]
-
-    # AUTO PAPER BUY
-    if result == "BUY" and trader.position is None:
-
-        trader.buy(
-            symbol,
-            current_price,
-            1
+        result = generate_signal(
+            data["SUPERTREND"],
+            data["MACD"],
+            data["MACD_SIGNAL"],
+            data["Volume"],
+            data["AVG_VOLUME"],
         )
 
-        send_alert(
-            f"AUTO BUY {symbol} @ {current_price}"
-        )
+        current_price = data["Close"]
 
-    # AUTO EXIT
-    if trader.position:
+        # AUTO PAPER BUY
+        if result == "BUY" and trader.position is None:
 
-        exit_signal = check_exit(
-            trader.position["entry"],
-            current_price
-        )
-
-        if exit_signal:
-
-            trader.sell(current_price)
-
-            send_alert(
-                f"AUTO EXIT {symbol} {exit_signal}"
+            trader.buy(
+                symbol,
+                current_price,
+                1
             )
 
-    if result == "BUY":
-        send_alert(f"BUY Signal on {symbol}")
+            send_alert(
+                f"AUTO BUY {symbol} @ {current_price}"
+            )
 
-    elif result == "SELL":
-        send_alert(f"SELL Signal on {symbol}")
+        # AUTO EXIT
+        if trader.position:
+
+            exit_signal = check_exit(
+                trader.position["entry"],
+                current_price
+            )
+
+            if exit_signal:
+
+                trader.sell(current_price)
+
+                send_alert(
+                    f"AUTO EXIT {symbol} {exit_signal}"
+                )
+
+        if result == "BUY":
+            send_alert(f"BUY Signal on {symbol}")
+
+        elif result == "SELL":
+            send_alert(f"SELL Signal on {symbol}")
 
     volume_ratio = (
         data["Volume"] / data["AVG_VOLUME"]
