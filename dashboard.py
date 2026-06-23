@@ -56,7 +56,10 @@ strike_mode = st.selectbox(
 )
 st.write(f"Selected: {strike_mode}{option_side}")
 
-trader = PaperTrader()
+if "trader" not in st.session_state:
+    st.session_state.trader = PaperTrader()
+
+trader = st.session_state.trader
 
 st.subheader("Paper Trading")
 
