@@ -85,38 +85,8 @@ if st.button("Run Scanner"):
             data["MACD_SIGNAL"],
             data["Volume"],
             data["AVG_VOLUME"],
-        )
-       current_price = data["Close"]
 
-# AUTO PAPER BUY
-if result == "BUY" and trader.position is None:
-
-    trader.buy(
-        symbol,
-        current_price,
-        1
-    )
-
-    send_alert(
-        f"AUTO BUY {symbol} @ {current_price}"
-    )
-
-# AUTO EXIT
-if trader.position:
-
-    exit_signal = check_exit(
-        trader.position["entry"],
-        current_price
-    )
-
-    if exit_signal:
-
-        trader.sell(current_price)
-
-        send_alert(
-            f"AUTO EXIT {symbol} {exit_signal}"
-        ) 
-        )
+        )      
         if result == "BUY":
             send_alert(f"BUY Signal on {symbol}")
             place_trade("BUY", symbol, 1)
