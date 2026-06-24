@@ -92,7 +92,7 @@ if st.button("Run Scanner"):
         st.write("SUPERTREND:", data["SUPERTREND"])
         st.write("MACD:", data["MACD"])
         st.write("MACD SIGNAL:", data["MACD_SIGNAL"])
-        st.write("VOLUME:", data["VOLUME"])
+        st.write("VOLUME:", data["Volume"])
         st.write("AVG VOLUME:", data["AVG_VOLUME"])
 
         current_price = data["Close"]
