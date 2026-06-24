@@ -14,6 +14,8 @@ def get_signals(symbol):
     print("Symbol:", symbol)
     print("Rows =", len(df))
     print(df.tail())
+    print("Last Volume =", df["Volume"].iloc[-1])
+    print("Avg Volume =", df["Volume"].rolling(20).mean().iloc[-1])
 
     if df.empty:
         return {"error": "No data"}
