@@ -43,6 +43,16 @@ symbol = st.selectbox(
     "Symbol",
     ["^NSEI", "^NSEBANK", "RELIANCE.NS", "TCS.NS", "INFY.NS"]
 )
+strategy_name = st.selectbox(
+    "Select Strategy",
+    [
+        "EMA Crossver",
+        "RSI",
+        "SuperTrend",
+        "MACD + Volume",
+        "AI Combo"
+    ]
+)
 # Option Selection
 st.subheader("option Selection")
 
