@@ -8,7 +8,7 @@ def get_signals(symbol):
     df = yf.download(
         symbol,
         period="30d",
-        interval="15m",
+        interval="5m",
         auto_adjust=False
     )
     print("Symbol:", symbol)
