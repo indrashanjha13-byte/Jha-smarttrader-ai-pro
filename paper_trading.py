@@ -28,6 +28,7 @@ class PaperTrader:
         print(f"BUY {symbol} @ {price}")
 
     def sell(self, price):
+        print("SELL PRICE RECEIVED =", price)
 
         if not self.position:
             return
