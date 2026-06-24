@@ -109,7 +109,7 @@ if st.button("Run Scanner"):
             )
 
             send_alert(
-                f"AUTO BUY {symbol} @ {current_price}"
+                f"AUTO BUY\nSimbol: {symbol}\nPrice: {current_price}"
             )
 
         # AUTO EXIT
@@ -126,15 +126,19 @@ if st.button("Run Scanner"):
                 trader.sell(current_price)
 
                 send_alert(
-                    f"AUTO EXIT {symbol} {exit_signal}"
+                    f"AUTO EXIT\nSymbol: {symbol\nReason: {exit_signal}\nPrice: {current_price}"
                 )
 
         if result == "BUY":
-            send_alert(f"BUY Signal on {symbol}")
-
+            send_alert(
+                f"BUY Signal\nSymbol: {symbol}\nPrice: {current_price}"
+            )
+    
         elif result == "SELL":
-            send_alert(f"SELL Signal on {symbol}")
-
+            send_alert(
+                f"SELL Signal\nSymbol: {symbol}\nPrice: {current_price}"
+            )
+            
     volume_ratio = (
         data["Volume"] / data["AVG_VOLUME"]
         if data["AVG_VOLUME"] > 0 else 1
