@@ -121,6 +121,7 @@ if st.button("Run Scanner"):
             )
 
             if exit_signal:
+                st.write("EXIT PRICE =", current_price)
 
                 trader.sell(current_price)
 
