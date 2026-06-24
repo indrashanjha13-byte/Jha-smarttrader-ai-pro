@@ -397,3 +397,9 @@ try:
         st.error("🔴 Data Disconnected")
 except:
     st.warning("🟡 Run Scanner First")
+
+st.subheader("Telegram Test")
+
+if st.button("Test Telegram"):
+    send_alert("Telegram Test Successful ✅")
+    st.success("Test Message Sent")
