@@ -126,7 +126,7 @@ if st.button("Run Scanner"):
                 trader.sell(current_price)
 
                 send_alert(
-                    f"AUTO EXIT\nSymbol: {symbol\nReason: {exit_signal}\nPrice: {current_price}"
+                    f"AUTO EXIT\nSymbol: {symbol}\nReason: {exit_signal}\nPrice: {current_price}"
                 )
 
         if result == "BUY":
