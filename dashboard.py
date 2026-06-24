@@ -96,6 +96,8 @@ if st.button("Run Scanner"):
         st.write("AVG VOLUME:", data["AVG_VOLUME"])
 
         current_price = data["Close"]
+        st.write("SYMBOL =", symbol)
+        st.write("CLOSE =", current_price)
 
         # AUTO PAPER BUY
         if result == "BUY" and trader.position is None:
