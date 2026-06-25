@@ -23,6 +23,40 @@ def generate_signal(
         return "SELL"
 
     return "NO TRADE"
+
+
+def ema_signal(ema9, ema21):
+
+    if ema9 > ema21:
+        return "BUY"
+
+    elif ema9 < ema21:
+        return "SELL"
+
+    return "NO TRADE"
+
+
+def rsi_signal(rsi):
+
+    if rsi < 30:
+        return "BUY"
+
+    elif rsi > 70:
+        return "SELL"
+
+    return "NO TRADE"
+
+
+def supertrend_signal(supertrend):
+
+    if supertrend > 0:
+        return "BUY"
+
+    elif supertrend < 0:
+        return "SELL"
+
+    return "NO TRADE"
+
 def option_selection(signal, strike_mode):
 
     if signal == "BUY":
