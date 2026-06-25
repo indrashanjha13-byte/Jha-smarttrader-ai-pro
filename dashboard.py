@@ -96,6 +96,13 @@ if st.button("Run Scanner"):
         st.error(data["error"])
 
     else:
+        if strategy_name == "EMA Crossover":
+            result = ema_signal(
+                data["EMA9"],
+                data["EMA21"]
+            )
+
+        elif strategy_name == "EMA Crossover":
 
         result = generate_signal(
             data["SUPERTREND"],
