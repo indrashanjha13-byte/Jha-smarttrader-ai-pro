@@ -23,7 +23,12 @@ from auto_mode import (
 )
 from datetime import datetime
 from paper_trading import check_exit
-
+from strategy import (
+    generate_signal,
+    ema_signal,
+    rsi_signal,
+    supertrend_signal
+)
 
 st.set_page_config(
     page_title="SmartTrader AI Pro",
