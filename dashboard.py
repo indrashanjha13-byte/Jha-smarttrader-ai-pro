@@ -110,7 +110,8 @@ if st.button("Run Scanner"):
             result = supertrend_signal(
                 data["SUPERTREND"]
             )
-        elif
+        elif:
+            
             result =generate_signal(
                 data["SUPERTREND"],
                 data["MACD"],
