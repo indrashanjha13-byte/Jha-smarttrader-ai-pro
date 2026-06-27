@@ -102,15 +102,22 @@ if st.button("Run Scanner"):
                 data["EMA21"]
             )
 
-        elif strategy_name == "EMA Crossover":
-
-        result = generate_signal(
-            data["SUPERTREND"],
-            data["MACD"],
-            data["MACD_SIGNAL"],
-            data["Volume"],
-            data["AVG_VOLUME"],
-        )
+        elif strategy_name == "RSI":
+            result = rsi_signal(
+                data["RSI"]
+            )
+        elif strategy_name =="SuperTrend":
+            result = supertrend_signal(
+                data["SUPERTREND"]
+            )
+        elif:
+            result =generate_signal(
+                data["SUPERTREND"],
+                data["MACD"],
+                data["MACD_SIGNAL"],
+                data["Volume"],
+                data["AVG_VOLUME"],
+            )
         st.write("SUPERTREND:", data["SUPERTREND"])
         st.write("MACD:", data["MACD"])
         st.write("MACD SIGNAL:", data["MACD_SIGNAL"])
