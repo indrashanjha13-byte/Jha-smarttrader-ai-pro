@@ -68,6 +68,15 @@ if st.button("AI Multi Scanner"):
             data = get_signals(stock)
             if "error" in data:
                 continue
+            result =generate_signal(
+                data["SUPERTREND"],
+                data["MACD"],
+                data["MACD_SIGNAL"],
+                data["Volume"],
+                data["AVG_VOLUME"]
+            )
+        st.write(stock, "➡️", result)
+        
     
              
 strategy_name = st.selectbox(
