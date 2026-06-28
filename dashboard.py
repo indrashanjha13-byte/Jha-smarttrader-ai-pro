@@ -48,6 +48,19 @@ symbol = st.selectbox(
     "Symbol",
     ["^NSEI", "^NSEBANK", "RELIANCE.NS", "TCS.NS", "INFY.NS"]
 )
+stock_list = [
+    "^NSEI",         # Nifty 50
+    "^NSEBANK",      # Bank Nifty
+    "^BSESN",        # Sensex
+    "RELIANCE.NS",
+    "TCS.NS",
+    "INFY.NS",
+    "HDFCBANK.NS",
+    "ICICIBANK.NS",
+    "SBIN.NS",
+    "LT.NS",
+    "AXISBANK.NS"
+]
 strategy_name = st.selectbox(
     "Select Strategy",
     [
