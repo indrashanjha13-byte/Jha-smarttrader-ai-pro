@@ -82,8 +82,9 @@ if st.button("AI Multi Scanner"):
             data["MACD_SIGNAL"],
             data["Volume"],
             data["AVG_VOLUME"]
+
         )
-volume_ratio = (
+       volume_ratio = (
     data["Volume"] / data["AVG_VOLUME"]
     if data["AVG_VOLUME"] > 0 else 1
 )
@@ -98,7 +99,7 @@ score = signal_score(
     data["RSI"],
     volume_ratio,
     trend
-)
+) 
         results.append([stock, result])
 
     st.subheader("AI Ranking")
