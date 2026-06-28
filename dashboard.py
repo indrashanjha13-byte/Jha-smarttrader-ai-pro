@@ -61,6 +61,15 @@ stock_list = [
     "LT.NS",
     "AXISBANK.NS"
 ]
+if st.button("AI Multi Scanner"):
+    st.subheader("Top AI Singnal")
+    for "stock in stcok_list:
+
+            data = get_signals(stock)
+            if "error" in data:
+                continue
+    
+             
 strategy_name = st.selectbox(
     "Select Strategy",
     [
