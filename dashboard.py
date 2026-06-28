@@ -62,7 +62,10 @@ stock_list = [
     "AXISBANK.NS"
 ]
 if st.button("AI Multi Scanner"):
+
     st.subheader("Top AI Signal")
+
+    results = []
 
     for stock in stock_list:
 
@@ -79,7 +82,20 @@ if st.button("AI Multi Scanner"):
             data["AVG_VOLUME"]
         )
 
-        st.write(stock, "➡️", result)
+        results.append([stock, result])
+
+    st.subheader("AI Ranking")
+
+    for stock, signal in results:
+
+        if signal == "BUY":
+            st.success(f"🟢 {stock} ➜ BUY")
+
+        elif signal == "SELL":
+            st.error(f"🔴 {stock} ➜ SELL")
+
+        else:
+            st.warning(f"🟡 {stock} ➜ NO TRADE")
         
     
              
