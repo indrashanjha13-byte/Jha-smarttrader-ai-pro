@@ -82,38 +82,39 @@ if st.button("AI Multi Scanner"):
             data["MACD_SIGNAL"],
             data["Volume"],
             data["AVG_VOLUME"]
-
         )
-       volume_ratio = (
-    data["Volume"] / data["AVG_VOLUME"]
-    if data["AVG_VOLUME"] > 0 else 1
-)
 
-trend = (
-    "UP"
-    if data["SUPERTREND"] > 0
-    else "DOWN"
-)
+        volume_ratio = (
+            data["Volume"] / data["AVG_VOLUME"]
+            if data["AVG_VOLUME"] > 0 else 1
+        )
 
-score = signal_score(
-    data["RSI"],
-    volume_ratio,
-    trend
-) 
-        results.append([stock, result])
+        trend = (
+            "UP"
+            if data["SUPERTREND"] > 0
+            else "DOWN"
+        )
+
+        score = signal_score(
+            data["RSI"],
+            volume_ratio,
+            trend
+        )
+
+        results.append([stock, result, score])
 
     st.subheader("AI Ranking")
 
-    for stock, signal in results:
+    for stock, signal, score in results:
 
         if signal == "BUY":
-            st.success(f"🟢 {stock} ➜ BUY")
+            st.success(f"🟢 {stock} ➜ BUY ⭐ {score}")
 
         elif signal == "SELL":
-            st.error(f"🔴 {stock} ➜ SELL")
+            st.error(f"🔴 {stock} ➜ SELL ⭐ {score}")
 
         else:
-            st.warning(f"🟡 {stock} ➜ NO TRADE")
+            st.warning(f"🟡 {stock} ➜ NO TRADE ⭐ {score}")
         
     
              
