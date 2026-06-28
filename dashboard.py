@@ -110,7 +110,8 @@ if st.button("AI Multi Scanner"):
 
     st.subheader("AI Ranking")
 
-    for stock, signal, score in results:
+    for stock, signal, score in results[:5]:
+        
 
         if signal == "BUY":
             st.success(f"🟢 {stock} ➜ BUY ⭐ {score}")
