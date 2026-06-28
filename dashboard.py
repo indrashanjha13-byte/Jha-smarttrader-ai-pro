@@ -119,15 +119,14 @@ if st.button("Run Scanner"):
                 data["Volume"],
                 data["AVG_VOLUME"],
             )
-    else: #AI Combo
-
-        result = generate_signal(
-            data["SUPERTREND"],
-            data["MACD"],
-            data["MACD_SIGNAL"],
-            data["Volume"],
-            data["AVG_VOLUME"]
-        )
+        else:
+            result = generate_signal(
+                data["SUPERTREND"],
+                data["MACD"],
+                data["MACD_SIGNAL"],
+                data["Volume"],
+                data["AVG_VOLUME"]
+            )
         
         st.write("SUPERTREND:", data["SUPERTREND"])
         st.write("MACD:", data["MACD"])
