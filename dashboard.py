@@ -62,19 +62,23 @@ stock_list = [
     "AXISBANK.NS"
 ]
 if st.button("AI Multi Scanner"):
-    st.subheader("Top AI Singnal")
+    st.subheader("Top AI Signal")
+
     for stock in stock_list:
 
-            data = get_signals(stock)
-            if "error" in data:
-                continue
-            result =generate_signal(
-                data["SUPERTREND"],
-                data["MACD"],
-                data["MACD_SIGNAL"],
-                data["Volume"],
-                data["AVG_VOLUME"]
-            )
+        data = get_signals(stock)
+
+        if "error" in data:
+            continue
+
+        result = generate_signal(
+            data["SUPERTREND"],
+            data["MACD"],
+            data["MACD_SIGNAL"],
+            data["Volume"],
+            data["AVG_VOLUME"]
+        )
+
         st.write(stock, "➡️", result)
         
     
