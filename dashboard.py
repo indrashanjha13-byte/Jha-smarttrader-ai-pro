@@ -29,8 +29,10 @@ from strategy import (
     rsi_signal,
     supertrend_signal
 )
-
+from ai_signal_ranker import signal_score
 st.set_page_config(
+
+    
     page_title="SmartTrader AI Pro",
     layout="wide"
 )
@@ -81,7 +83,22 @@ if st.button("AI Multi Scanner"):
             data["Volume"],
             data["AVG_VOLUME"]
         )
+volume_ratio = (
+    data["Volume"] / data["AVG_VOLUME"]
+    if data["AVG_VOLUME"] > 0 else 1
+)
 
+trend = (
+    "UP"
+    if data["SUPERTREND"] > 0
+    else "DOWN"
+)
+
+score = signal_score(
+    data["RSI"],
+    volume_ratio,
+    trend
+)
         results.append([stock, result])
 
     st.subheader("AI Ranking")
