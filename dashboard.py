@@ -63,7 +63,7 @@ stock_list = [
 ]
 if st.button("AI Multi Scanner"):
     st.subheader("Top AI Singnal")
-    for stock in stcok_list:
+    for stock in stock_list:
 
             data = get_signals(stock)
             if "error" in data:
