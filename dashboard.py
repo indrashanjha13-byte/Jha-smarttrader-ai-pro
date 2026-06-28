@@ -110,7 +110,7 @@ if st.button("Run Scanner"):
             result = supertrend_signal(
                 data["SUPERTREND"]
             )
-        elif strategy_name == 'MACD + Volume":
+        elif strategy_name == "MACD + Volume":
             
             result =generate_signal(
                 data["SUPERTREND"],
