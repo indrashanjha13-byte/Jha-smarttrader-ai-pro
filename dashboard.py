@@ -126,7 +126,7 @@ if st.button("Run Scanner"):
             data["MACD"],
             data["MACD_SIGNAL"],
             data["Volume"],
-            DATA["AVG_VOLUME"]
+            data["AVG_VOLUME"]
         )
         
         st.write("SUPERTREND:", data["SUPERTREND"])
