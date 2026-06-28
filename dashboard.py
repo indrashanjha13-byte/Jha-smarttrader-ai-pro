@@ -102,6 +102,11 @@ if st.button("AI Multi Scanner"):
         )
 
         results.append([stock, result, score])
+        results = sorted(
+            results,
+            key=lambda x:[2],
+            reverse=True
+        )
 
     st.subheader("AI Ranking")
 
