@@ -110,7 +110,7 @@ if st.button("Run Scanner"):
             result = supertrend_signal(
                 data["SUPERTREND"]
             )
-        else:
+        elif strategy_name == 'MACD + Volume":
             
             result =generate_signal(
                 data["SUPERTREND"],
@@ -119,6 +119,16 @@ if st.button("Run Scanner"):
                 data["Volume"],
                 data["AVG_VOLUME"],
             )
+    else: #AI Combo
+
+        result = generate_signal(
+            data["SUPERTREND"],
+            data["MACD"],
+            data["MACD_SIGNAL"],
+            data["Volume"],
+            DATA["AVG_VOLUME"]
+        )
+        
         st.write("SUPERTREND:", data["SUPERTREND"])
         st.write("MACD:", data["MACD"])
         st.write("MACD SIGNAL:", data["MACD_SIGNAL"])
