@@ -65,7 +65,7 @@ stock_list = [
 ]
 if st.button("AI Multi Scanner"):
 
-    st.subheader("Top AI Signal")
+    st.subheader("Top AI Scanner")
 
     results = []
 
