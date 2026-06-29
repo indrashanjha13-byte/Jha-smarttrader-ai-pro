@@ -146,10 +146,6 @@ if st.button("AI Multi Scanner"):
             st.warning(
     f"🟡 {stock} ➜ NO TRADE ⭐ {score} | 🎯 {confidence}%"
 )
-            
-        
-    
-             
 strategy_name = st.selectbox(
     "Select Strategy",
     [
@@ -237,6 +233,9 @@ if st.button("Run Scanner"):
         st.write("AVG VOLUME:", data["AVG_VOLUME"])
 
         current_price = data["Close"]
+        st.write("Signal =", result)
+        st.write("Current Position =", trader.position)
+        
         st.write("SYMBOL =", symbol)
         st.write("CLOSE =", current_price)
 
@@ -248,6 +247,8 @@ if st.button("Run Scanner"):
                 current_price,
                 1
             )
+            st.success("✅ AUTO PAPER BUY EXECUTED")
+            
 
             send_alert(
                 f"AUTO BUY\nSimbol: {symbol}\nPrice: {current_price}"
