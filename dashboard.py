@@ -98,7 +98,10 @@ if st.button("AI Multi Scanner"):
         score = signal_score(
             data["RSI"],
             volume_ratio,
-            trend
+            trend,
+            data["MACD"],
+            data["MACD_SIGNAL"],
+            data["SUPERTREND"]
         )
 
         results.append([stock, result, score])
