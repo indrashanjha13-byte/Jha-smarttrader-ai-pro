@@ -83,6 +83,12 @@ if st.button("AI Multi Scanner"):
             data["Volume"],
             data["AVG_VOLUME"]
         )
+        st.write("Stock:", stock)
+        st.write("RSI:", data["RSI"])
+        st.write("MACD:", data["MACD"])
+        st.write("MACD SIGNAL:", data["MACD_SIGNAL"])
+        st.write("SUPERTREND:", data["SUPERTREND"])
+        st.write("VOLUME:", data["Volume"])
 
         volume_ratio = (
             data["Volume"] / data["AVG_VOLUME"]
