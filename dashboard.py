@@ -109,14 +109,6 @@ if st.button("AI Multi Scanner"):
             data["MACD_SIGNAL"],
             data["SUPERTREND"]
         )
-        
-
-        results.append([stock, result, score, confidence])
-        results = sorted(
-            results,
-            key=lambda x: x[2],
-            reverse=True
-        )
         if score >= 90:
             confidence = 98
         elif score >= 80:
@@ -127,6 +119,14 @@ if st.button("AI Multi Scanner"):
             confidence = 70
         else:
             confidence = 55
+        
+
+        results.append([stock, result, score, confidence])
+        results = sorted(
+            results,
+            key=lambda x: x[2],
+            reverse=True
+        )
 
     st.subheader("AI Ranking")
 
