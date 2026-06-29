@@ -109,27 +109,44 @@ if st.button("AI Multi Scanner"):
             data["MACD_SIGNAL"],
             data["SUPERTREND"]
         )
+        
 
-        results.append([stock, result, score])
+        results.append([stock, result, score, confidence])
         results = sorted(
             results,
             key=lambda x: x[2],
             reverse=True
         )
+        if score >= 90:
+            confidence = 98
+        elif score >= 80:
+            confidence = 90
+        elif score >= 70:
+            confidence = 80
+        elif score >= 60:
+            confidence = 70
+        else:
+            confidence = 55
 
     st.subheader("AI Ranking")
 
-    for stock, signal, score in results[:5]:
+    for stock, signal, score, confidence in results[:5]:
         
 
         if signal == "BUY":
-            st.success(f"🟢 {stock} ➜ BUY ⭐ {score}")
-
+            st.success(
+    f"🟢 {stock} ➜ BUY ⭐ {score} | 🎯 {confidence}%"
+)
+            
         elif signal == "SELL":
-            st.error(f"🔴 {stock} ➜ SELL ⭐ {score}")
-
+            st.error(
+    f"🔴 {stock} ➜ SELL ⭐ {score} | 🎯 {confidence}%"
+)
         else:
-            st.warning(f"🟡 {stock} ➜ NO TRADE ⭐ {score}")
+            st.warning(
+    f"🟡 {stock} ➜ NO TRADE ⭐ {score} | 🎯 {confidence}%"
+)
+            
         
     
              
