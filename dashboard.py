@@ -169,6 +169,21 @@ strike_mode = st.selectbox(
     ["ITM", "ATM", "OTM"]
 )
 st.write(f"Selected: {strike_mode}{option_side}")
+st.subheader("📊 Live Option Chain")
+
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    st.metric("ATM Strike", "24000")
+
+with col2:
+    st.metric("Call OI", "12.5 L")
+
+with col3:
+    st.metric("Put OI", "14.2 L")
+
+with col4:
+    st.metric("PCR", "1.14")
 
 if "trader" not in st.session_state:
     st.session_state.trader = PaperTrader()
