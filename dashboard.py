@@ -194,6 +194,28 @@ with col8:
     )
 st.subheader("📈 Option Chain Analysis")
 
+st.subheader("🌍 Market Status")
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.metric(
+        "Trend",
+        "🟢 Bullish"
+    )
+
+with col2:
+    st.metric(
+        "Volatility",
+        "Medium"
+    )
+
+with col3:
+    st.metric(
+        "Market Mood",
+        "Buy"
+    )
+
 if 1.0 < 1.2:
     st.success("🟢 PCR Bullish")
 
