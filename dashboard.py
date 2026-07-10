@@ -694,6 +694,23 @@ try:
         line=dict(color="orange", width=2)
     )
 )
+    buy_signal = ema9 > ema21
+
+    fig.add_trace(
+    go.Scatter(
+        x=chart_data.index,
+        y=close_data,
+        mode="markers",
+        name="EMA Cross",
+        marker=dict(
+            size=8,
+            color=[
+                "green" if x else "red"
+                for x in buy_signal
+            ]
+        )
+    )
+)
 
     signal = generate_signal(
         data["SUPERTREND"],
