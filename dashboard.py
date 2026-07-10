@@ -172,6 +172,37 @@ st.write(f"Selected: {strike_mode}{option_side}")
 st.subheader("📊 Live Option Chain")
 
 col1, col2, col3, col4 = st.columns(4)
+col5, col6 = st.columns(2)
+
+with col5:
+    st.metric("CE Premium", "₹152.40")
+
+with col6:
+    st.metric("PE Premium", "₹138.20")
+    col7, col8 = st.columns(2)
+
+with col7:
+    st.metric(
+        "IV",
+        "14.80%"
+    )
+
+with col8:
+    st.metric(
+        "Max Pain",
+        "24000"
+    )
+st.subheader("📈 Option Chain Analysis")
+
+if 1.0 < 1.2:
+    st.success("🟢 PCR Bullish")
+
+st.info("📊 Max Pain : 24000")
+
+st.warning("⚠️ Highest Call OI : 24200")
+
+st.warning("⚠️ Highest Put OI : 23900")
+    
 
 with col1:
     st.metric("ATM Strike", "24000")
