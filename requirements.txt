@@ -1,7 +1,10 @@
 streamlit
 yfinance
+pandas
 pandas_ta
 pillow
 numpy
 plotly
 requests
+streamlit-autorefresh
+python-telegram-bot
