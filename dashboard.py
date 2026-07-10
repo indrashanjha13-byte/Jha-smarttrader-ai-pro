@@ -675,6 +675,25 @@ try:
          xaxis_rangeslider_visible=False,
          height=600
     )
+    fig.add_trace(
+    go.Scatter(
+        x=chart_data.index,
+        y=ema9,
+        mode="lines",
+        name="EMA 9",
+        line=dict(color="blue", width=2)
+    )
+)
+
+    fig.add_trace(
+    go.Scatter(
+        x=chart_data.index,
+        y=ema21,
+        mode="lines",
+        name="EMA 21",
+        line=dict(color="orange", width=2)
+    )
+)
 
     signal = generate_signal(
         data["SUPERTREND"],
