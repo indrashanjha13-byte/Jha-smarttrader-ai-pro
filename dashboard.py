@@ -213,6 +213,24 @@ else:
     "AI Confidence",
     f"{confidence}%"
 )
+    st.subheader("📍 Support & Resistance")
+
+support = round(current_price - 150, 2)
+resistance = round(current_price + 150, 2)
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.metric(
+        "Support",
+        f"₹{support}"
+    )
+
+with col2:
+    st.metric(
+        "Resistance",
+        f"₹{resistance}"
+    )
 
 col1, col2, col3 = st.columns(3)
 
@@ -683,7 +701,19 @@ try:
         showarrow=True,
         arrowhead=2
     )
-    
+    fig.add_hline(
+        y=support,
+        line_color="yellow",
+        line_width=2,
+        annotation_text=f"Support ₹{support}"
+    )
+
+    fig.add_hline(
+        y=resistance,
+        line_color="yellow",
+        line_width=2,
+        annotation_text=f"Resistance ₹{resistance}"
+    )
 
     st.plotly_chart(fig, use_container_width=True)
     
