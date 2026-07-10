@@ -174,13 +174,8 @@ st.subheader("📊 Live Option Chain")
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    atm_strike = round(current_price / 50) * 50
-
-st.metric(
-    "ATM Strike",
-    f"{atm_strike}"
-)
-
+    st.metric("ATM Strike", "24000")
+    
 with col2:
     st.metric("Call OI", "12.5 L")
 
