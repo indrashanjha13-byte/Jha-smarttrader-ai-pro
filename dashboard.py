@@ -169,6 +169,7 @@ strike_mode = st.selectbox(
     ["ITM", "ATM", "OTM"]
 )
 st.write(f"Selected: {strike_mode}{option_side}")
+
 st.subheader("📊 Live Option Chain")
 
 col1, col2, col3, col4 = st.columns(4)
@@ -195,6 +196,23 @@ with col8:
 st.subheader("📈 Option Chain Analysis")
 
 st.subheader("🌍 Market Status")
+
+st.subheader("🤖 AI Decision")
+
+confidence = 75
+
+if confidence >= 80:
+    st.success("✅ Strong BUY")
+
+elif confidence >= 60:
+    st.warning("⚠️ WAIT")
+
+else:
+    st.error("❌ AVOID TRADE")
+    st.metric(
+    "AI Confidence",
+    f"{confidence}%"
+)
 
 col1, col2, col3 = st.columns(3)
 
