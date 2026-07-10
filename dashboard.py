@@ -3,8 +3,6 @@ from PIL import Image
 import streamlit as st
 import pandas as pd
 from signals import get_signals
-from strategy import generate_signal
-from ai_signal_ranker import signal_score
 from paper_trading import PaperTrader
 from telegram_bot import send_alert
 from portfolio import update_position
@@ -27,14 +25,17 @@ from strategy import (
     generate_signal,
     ema_signal,
     rsi_signal,
-    supertrend_signal
-)
+    supertrend_signal)
 from ai_signal_ranker import signal_score
-st.set_page_config(
+from streamlit_autorefresh import st_autorefresh
 
-    
+st.set_page_config(   
     page_title="SmartTrader AI Pro",
     layout="wide"
+)
+st_autorefresh(
+    interval=15000,
+    key="market_refresh"
 )
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -295,7 +296,11 @@ if st.button("Run Scanner"):
     score = signal_score(
         data["RSI"],
         volume_ratio,
-        trend
+        trend,
+        data["MACD"],
+        data["MACD_SIGNAL"],
+        data["SUPERTREND"]
+
     )
 
     col1, col2, col3, col4 = st.columns(4)
@@ -390,6 +395,10 @@ capital = st.number_input(
     "Capital",
     value=100000
 )
+risk_percent = st.number_input(
+    "Risk %",
+    value=2.0  
+)
 
 entry_price = st.number_input(
     "Entry Price",
@@ -401,12 +410,12 @@ stoploss_price = st.number_input(
     value=480
 )
 
+stop_distance = abs(entry_price - stoploss_price)
 qty = calculate_qty(
     capital,
     entry_price,
     stoploss_price
 )
-
 st.write("Suggested Quantity:", qty)
 st.subheader("Trade Analytics")
 
@@ -435,8 +444,8 @@ st.subheader("Live Profit / Loss")
 try:
     df = pd.read_csv("trade_history.csv")
 
-    buy_count = len(df[df["Side"] == "BUY"])
-    sell_count = len(df[df["Side"] == "SELL"])
+    buy_count = len(df[df["Action"] == "BUY"])
+    sell_count = len(df[df["Action"] == "SELL"])
 
     total_pnl = (sell_count - buy_count) * 30
 
@@ -495,6 +504,54 @@ try:
         interval="15m"
     )
 
+    close_data = chart_data["Close"]
+
+    if isinstance(close_data, pd.DataFrame):
+        close_data = close_data.iloc[:, 0]
+
+    current_price = float(close_data.iloc[-1])
+
+    day_high = chart_data["High"].max()
+    if isinstance(day_high, pd.Series):
+        day_high = day_high.iloc[0]
+    day_high = float(day_high)
+
+    day_low = chart_data["Low"].min()
+    if isinstance(day_low, pd.Series):
+        day_low = day_low.iloc[0]
+    day_low = float(day_low)
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric(
+            "Current Price",
+            f"₹{current_price:.2f}"
+        )
+
+    with col2:
+        st.metric(
+            "Day High",
+            f"₹{day_high:.2f}"
+        )
+
+    with col3:
+        st.metric(
+            "Day Low",
+            f"₹{day_low:.2f}"
+        )
+
+    ema9 = close_data.ewm(span=9).mean()
+    ema21 = close_data.ewm(span=21).mean()
+
+    display_data = pd.DataFrame({
+        "Close": close_data,
+        "EMA9": ema9,
+        "EMA21": ema21
+    })
+
+    st.line_chart(display_data)
+    
     fig = go.Figure(
         data=[
             go.Candlestick(
@@ -507,13 +564,138 @@ try:
         ]
     )
 
-    st.plotly_chart(
-        fig,
-        use_container_width=True
+    fig.update_layout(
+         title="📈 Live Candlestick Chart",
+         xaxis_title="Time",
+         yaxis_title="Price",
+         xaxis_rangeslider_visible=False,
+         height=600
     )
 
-except:
-    st.info("Chart Not Available")
+    signal = generate_signal(
+        data["SUPERTREND"],
+        data["MACD"],
+        data["MACD_SIGNAL"],
+        data["Volume"],
+        data["AVG_VOLUME"]
+    )
+
+    if signal == "BUY":
+        fig.add_annotation(
+        x=chart_data.index[-1],
+        y=current_price,
+        text="🟢 BUY",
+        showarrow=True,
+        arrowhead=2
+    )
+        
+    elif signal == "SELL":
+        fig.add_annotation(
+        x=chart_data.index[-1],
+        y=current_price,
+        text="🔴 SELL",
+        showarrow=True,
+        arrowhead=2
+    )
+    
+
+    st.plotly_chart(fig, use_container_width=True)
+    
+
+    st.subheader("RSI & MACD")
+
+    data = get_signals(symbol)
+
+    rsi_value = data["RSI"]
+    macd_value = data["MACD"]
+    macd_signal = data["MACD_SIGNAL"]
+
+    chart_df = pd.DataFrame({
+        "Indicator": ["RSI", "MACD", "Signal"],
+        "Value": [rsi_value, macd_value, macd_signal]
+    })
+
+    st.bar_chart(
+        chart_df.set_index("Indicator")
+    )
+
+    st.subheader("📊 Live Market Summary")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric(
+            "RSI",
+            round(data["RSI"], 2)
+        )
+
+    with col2:
+        st.metric(
+            "MACD",
+            round(data["MACD"], 2)
+        )
+
+    with col3:
+        st.metric(
+            "Volume",
+            int(data["Volume"])
+        )
+
+    st.subheader("📢 AI Trading Signal")
+
+   
+
+    if signal == "BUY":
+        st.success("🟢 BUY SIGNAL")
+
+    elif signal == "SELL":
+        st.error("🔴 SELL SIGNAL")
+
+    else:
+        st.warning("🟡 NO TRADE")
+    st.subheader("🤖 AI Confidence")
+
+    confidence = signal_score(
+        data["RSI"],
+        data["Volume"] / data["AVG_VOLUME"] if data["AVG_VOLUME"] > 0 else 1,
+        "UP" if data["SUPERTREND"] > 0 else "DOWN",
+        data["MACD"],
+        data["MACD_SIGNAL"],
+        data["SUPERTREND"]
+    )
+
+    st.progress(confidence / 100)
+    st.write(f"Confidence : {confidence}%")
+
+    st.subheader("💰 Risk / Reward")
+
+    entry = float(current_price)
+    stoploss = entry - 100
+    target = entry + 200
+
+    reward = target - entry
+    risk = entry - stoploss
+
+    rr = round(reward / risk, 2)
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric("Entry", f"₹{entry:.2f}")
+
+    with col2:
+        st.metric("Stop Loss", f"₹{stoploss:.2f}")
+
+    with col3:
+        st.metric("Target", f"₹{target:.2f}")
+
+    st.success(f"Risk : Reward = 1 : {rr}")
+
+except Exception as e:
+    st.error(e)
+
+
+
 st.subheader("Auto Trading Control")
 
 if st.button("Enable Auto Trading"):
