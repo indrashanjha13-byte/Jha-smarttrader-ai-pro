@@ -663,7 +663,8 @@ try:
                 open=chart_data["Open"],
                 high=chart_data["High"],
                 low=chart_data["Low"],
-                close=chart_data["Close"]
+                close=chart_data["Close"],
+                name="Candlestick"
             )
         ]
     )
@@ -675,6 +676,17 @@ try:
          xaxis_rangeslider_visible=False,
          height=600
     )
+    template="plotly_dark",
+    hovermode="x unified",
+    legend=dict(
+    orientation="h",
+    yanchor="bottom",
+    y=1.02,
+    xanchor="right",
+    x=1
+)
+
+    
     fig.add_trace(
     go.Scatter(
         x=chart_data.index,
