@@ -649,28 +649,48 @@ try:
         "EMA9": ema9,
         "EMA21": ema21
     })
-
-    st.line_chart(display_data)
     
-    fig = go.Figure(
-        data=[
-            go.Candlestick(
-                x=chart_data.index,
-                open=chart_data["Open"],
-                high=chart_data["High"],
-                low=chart_data["Low"],
-                close=chart_data["Close"],
-                name="Candlestick"
-            )
-        ]
-    )
+     go.Candlestick(
+         x=chart_data.index,
+         open=chart_data["Open"],
+         high=chart_data["High"],
+         low=chart_data["Low"],
+         close=chart_data["Close"],
+         name="Candlestick"
+          from plotly.subplots import make_subplots
+
+    fig = make_subplots(
+    rows=2,
+    cols=1,
+    shared_xaxes=True,
+    vertical_spacing=0.03,
+    row_heights=[0.75, 0.25]
+
+  )  
+
+
+  fig.add_trace(
+       go.Candlestick(
+         x=chart_data.index,
+         open=chart_data["Open"],
+         high=chart_data["High"],
+         low=chart_data["Low"],
+         close=chart_data["Close"],
+         name="Candlestick"
+    ),
+    row=1,
+    col=1
+      
+   )
+            
+    
 
     fig.update_layout(
          title="📈 Live Candlestick Chart",
          xaxis_title="Time",
          yaxis_title="Price",
          xaxis_rangeslider_visible=False,
-         height=600
+         height=850
     )
     template="plotly_dark",
     hovermode="x unified",
