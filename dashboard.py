@@ -1,33 +1,55 @@
 from pathlib import Path
+
 from PIL import Image
+
 import streamlit as st
+
 import pandas as pd
+
 from signals import get_signals
+
 from paper_trading import PaperTrader
+
 from telegram_bot import send_alert
+
 from portfolio import update_position
+
 from report import generate_report
+
 from portfolio_manager import can_trade
+
 from auto_trader import place_trade
+
 from position_sizing import calculate_qty
+
 from trade_analytics import get_trade_stats
+
 from ai_predict import predict_trade
+
 import plotly.graph_objects as go
+
 import yfinance as yf
+
 from auto_mode import (
     enable_auto,
     disable_auto,
     is_enabled
 )
 from datetime import datetime
+
 from paper_trading import check_exit
+
 from strategy import (
     generate_signal,
     ema_signal,
     rsi_signal,
     supertrend_signal)
 from ai_signal_ranker import signal_score
+
 from streamlit_autorefresh import st_autorefresh
+
+from plotly.subplots import make_subplots
+
 
 st.set_page_config(   
     page_title="SmartTrader AI Pro",
@@ -657,7 +679,8 @@ try:
          low=chart_data["Low"],
          close=chart_data["Close"],
          name="Candlestick"
-          from plotly.subplots import make_subplots
+     )
+
 
     fig = make_subplots(
     rows=2,
@@ -691,7 +714,14 @@ try:
          yaxis_title="Price",
          xaxis_rangeslider_visible=False,
          height=850
+         template="plotly_dark",
+         legend=dict(
+             orientation="v"
     )
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+
     template="plotly_dark",
     hovermode="x unified",
     legend=dict(
@@ -710,7 +740,9 @@ try:
         mode="lines",
         name="EMA 9",
         line=dict(color="blue", width=2)
-    )
+    ),
+    row=1,
+    col=1
 )
 
     fig.add_trace(
@@ -720,23 +752,6 @@ try:
         mode="lines",
         name="EMA 21",
         line=dict(color="orange", width=2)
-    )
-)
-    buy_signal = ema9 > ema21
-
-    fig.add_trace(
-    go.Scatter(
-        x=chart_data.index,
-        y=close_data,
-        mode="markers",
-        name="EMA Cross",
-        marker=dict(
-            size=8,
-            color=[
-                "green" if x else "red"
-                for x in buy_signal
-            ]
-        )
     )
 )
 
