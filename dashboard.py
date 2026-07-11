@@ -681,7 +681,7 @@ try:
     row_heights=[0.75, 0.25]
 )
 
-fig.add_trace(
+   fig.add_trace(
     go.Candlestick(
         x=chart_data.index,
         open=chart_data["Open"],
