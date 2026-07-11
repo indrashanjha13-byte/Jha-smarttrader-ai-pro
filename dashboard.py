@@ -682,16 +682,16 @@ try:
 )
 
    fig.add_trace(
-    go.Candlestick(
-        x=chart_data.index,
-        open=chart_data["Open"],
-        high=chart_data["High"],
-        low=chart_data["Low"],
-        close=chart_data["Close"],
-        name="Candlestick"
-    ),
-    row=1,
-    col=1
+       go.Candlestick(
+           x=chart_data.index,
+           open=chart_data["Open"],
+           high=chart_data["High"],
+           low=chart_data["Low"],
+           close=chart_data["Close"],
+           name="Candlestick"
+     ),
+     row=1,
+     col=1
 )
 
 fig.update_layout(
@@ -739,7 +739,7 @@ st.plotly_chart(
         name="EMA 21",
         line=dict(color="orange", width=2)
     ),
-    roe=1,
+    row=1,
     col=1
         
 )
