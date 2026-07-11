@@ -614,6 +614,19 @@ try:
         close_data = close_data.iloc[:, 0]
 
     current_price = float(close_data.iloc[-1])
+    st.subheader("📍 Support & Resistance")
+
+    support = round(current_price - 150, 2)
+    resistance = round(current_price + 150, 2)
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.metric("Support", f"₹{support}")
+
+    with col2:
+        st.metric("Resistance", f"₹{resistance}")
+
 
     day_high = chart_data["High"].max()
     if isinstance(day_high, pd.Series):
