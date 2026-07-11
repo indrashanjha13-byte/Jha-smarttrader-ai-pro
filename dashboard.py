@@ -215,23 +215,6 @@ else:
 )
     st.subheader("📍 Support & Resistance")
 
-support = round(current_price - 150, 2)
-resistance = round(current_price + 150, 2)
-
-col1, col2 = st.columns(2)
-
-with col1:
-    st.metric(
-        "Support",
-        f"₹{support}"
-    )
-
-with col2:
-    st.metric(
-        "Resistance",
-        f"₹{resistance}"
-    )
-
 col1, col2, col3 = st.columns(3)
 
 with col1:
