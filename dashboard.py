@@ -671,15 +671,6 @@ try:
         "EMA9": ema9,
         "EMA21": ema21
     })
-    
-     go.Candlestick(
-         x=chart_data.index,
-         open=chart_data["Open"],
-         high=chart_data["High"],
-         low=chart_data["Low"],
-         close=chart_data["Close"],
-         name="Candlestick"
-     )
 
 
     fig = make_subplots(
