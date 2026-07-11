@@ -752,7 +752,10 @@ try:
         mode="lines",
         name="EMA 21",
         line=dict(color="orange", width=2)
-    )
+    ),
+    roe=1,
+    col=1
+        
 )
 
     signal = generate_signal(
@@ -793,6 +796,16 @@ try:
         line_width=2,
         annotation_text=f"Resistance ₹{resistance}"
     )
+    fig.add_trace(
+        go.Bar(
+          x=chart_data.index,
+          y=chart_data["Volume"],
+          name="Volume",
+          marker_color="cyan"
+    ),
+    row=2,
+    col=1
+)
 
     st.plotly_chart(fig, use_container_width=True)
     
