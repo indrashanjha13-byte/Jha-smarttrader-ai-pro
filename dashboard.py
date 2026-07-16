@@ -37,28 +37,63 @@ from auto_mode import (
 )
 from datetime import datetime
 
-from paper_trading import check_exit
-
 from strategy import (
     generate_signal,
     ema_signal,
     rsi_signal,
     supertrend_signal)
+
 from ai_signal_ranker import signal_score
 
 from streamlit_autorefresh import st_autorefresh
 
 from plotly.subplots import make_subplots
 
+from paper_trading import PaperTrader
+
+from ai_engine import (
+    ai_filter,
+    rank_signal,
+    market_regime,
+    risk_check,
+    trade_decision,
+    ai_brain,
+    confidence_score,
+    stop_target,
+    position_size,
+    trailing_stop,
+    daily_risk_manager
+)
+
+from ai_learning import (
+    update_learning,
+    load_learning,
+    best_strategy,
+    auto_strategy
+)
+
+from market_memory import best_market_strategy
+
+from trade_journal import (
+    save_trade,
+    update_last_trade
+)
+
 
 st.set_page_config(   
     page_title="SmartTrader AI Pro",
     layout="wide"
 )
+
 st_autorefresh(
     interval=15000,
     key="market_refresh"
 )
+if "trader" not in st.session_state:
+    st.session_state.trader = PaperTrader()
+
+trader = st.session_state.trader
+
 BASE_DIR = Path(__file__).resolve().parent
 
 logo_path = BASE_DIR / "logo.png"
@@ -172,14 +207,17 @@ if st.button("AI Multi Scanner"):
 strategy_name = st.selectbox(
     "Select Strategy",
     [
-        "EMA Crossver",
+        "EMA Crossover",
         "RSI",
         "SuperTrend",
         "MACD + Volume",
         "AI Combo"
     ]
 )
+st.info(f"🤖 AI Selected Strategy : {auto_strategy()}")
+
 # Option Selection
+
 st.subheader("option Selection")
 
 option_side = st.selectbox(
@@ -231,11 +269,13 @@ elif confidence >= 60:
 
 else:
     st.error("❌ AVOID TRADE")
+
     st.metric(
     "AI Confidence",
     f"{confidence}%"
 )
-    st.subheader("📍 Support & Resistance")
+st.subheader("📍 Support & Resistance")
+
 
 col1, col2, col3 = st.columns(3)
 
@@ -265,11 +305,10 @@ st.info("📊 Max Pain : 24000")
 st.warning("⚠️ Highest Call OI : 24200")
 
 st.warning("⚠️ Highest Put OI : 23900")
-    
 
 with col1:
     st.metric("ATM Strike", "24000")
-    
+
 with col2:
     st.metric("Call OI", "12.5 L")
 
@@ -279,32 +318,65 @@ with col3:
 with col4:
     st.metric("PCR", "1.14")
 
+
 if "trader" not in st.session_state:
     st.session_state.trader = PaperTrader()
 
 trader = st.session_state.trader
 
+data = get_signals(symbol)
+
+if "error" not in data:
+    current_price = data["Close"]
+
 st.subheader("Paper Trading")
 
-if st.button("Paper Buy"):
-    trader.buy(symbol, 500, 1)
-    st.success("Paper Buy Executed")
+col1, col2 = st.columns(2)
 
-if st.button("Paper Sell"):
-    trader.sell(530)
-    st.success("Paper Sell Executed")
+with col1:
+    if st.button("🟢 Paper Buy"):
 
-st.write("Balance:", trader.balance)
+        if "current_price" in locals():
+            trader.buy(symbol, current_price, 1)
+            st.success("Paper Buy Executed")
+        else:
+            st.warning("Run Scanner First")
+with col2:
+    if st.button("🔴 Paper Sell"):
+
+        if trader.position:
+            trader.sell(current_price)
+            st.success("Paper Sell Executed")
+        else:
+            st.warning("No Open Position")
 
 if st.button("Run Scanner"):
 
     data = get_signals(symbol)
 
+    if data["EMA9"] > data["EMA21"]:
+
+        market = "Bullish"
+
+    elif data["EMA9"] < data["EMA21"]:
+
+            market = "Bearish"
+
+    else:
+
+            market = "Sideways"
+            
+            strategy_name = best_market_strategy(market)
+
     if "error" in data:
         st.error(data["error"])
 
     else:
+
+        current_price = data["Close"]
+
         if strategy_name == "EMA Crossover":
+            
             result = ema_signal(
                 data["EMA9"],
                 data["EMA21"]
@@ -318,79 +390,45 @@ if st.button("Run Scanner"):
             result = supertrend_signal(
                 data["SUPERTREND"]
             )
-        elif strategy_name == "MACD + Volume":
+elif strategy_name == "MACD + Volume":
+
+    result = generate_signal(
+        data["SUPERTREND"],
+        data["MACD"],
+        data["MACD_SIGNAL"],
+        data["Volume"],
+        data["AVG_VOLUME"],
+    )
+
+elif strategy_name == "AI Combo":
+
+    ai = ai_brain(
+        signal="",
+        rsi=data["RSI"],
+        volume=data["Volume"],
+        trend="UP" if data["SUPERTREND"] > 0 else "DOWN",
+        ema9=data["EMA9"],
+        ema21=data["EMA21"],
+        supertrend=data["SUPERTREND"],
+        balance=trader.balance,
+        risk_percent=2,
+        trade_amount=current_price
+    )
+
+    result = ai["decision"]
+
+else:
+
+    result = generate_signal(
+        data["SUPERTREND"],
+        data["MACD"],
+        data["MACD_SIGNAL"],
+        data["Volume"],
+        data["AVG_VOLUME"]
+    )
             
-            result =generate_signal(
-                data["SUPERTREND"],
-                data["MACD"],
-                data["MACD_SIGNAL"],
-                data["Volume"],
-                data["AVG_VOLUME"],
-            )
-        else:
-            result = generate_signal(
-                data["SUPERTREND"],
-                data["MACD"],
-                data["MACD_SIGNAL"],
-                data["Volume"],
-                data["AVG_VOLUME"]
-            )
-        
-        st.write("SUPERTREND:", data["SUPERTREND"])
-        st.write("MACD:", data["MACD"])
-        st.write("MACD SIGNAL:", data["MACD_SIGNAL"])
-        st.write("VOLUME:", data["Volume"])
-        st.write("AVG VOLUME:", data["AVG_VOLUME"])
+     # AI Calculation
 
-        current_price = data["Close"]
-        st.write("Signal =", result)
-        st.write("Current Position =", trader.position)
-        
-        st.write("SYMBOL =", symbol)
-        st.write("CLOSE =", current_price)
-
-        # AUTO PAPER BUY
-        if result == "BUY" and trader.position is None:
-
-            trader.buy(
-                symbol,
-                current_price,
-                1
-            )
-            st.success("✅ AUTO PAPER BUY EXECUTED")
-            
-
-            send_alert(
-                f"AUTO BUY\nSimbol: {symbol}\nPrice: {current_price}"
-            )
-
-        # AUTO EXIT
-        if trader.position:
-
-            exit_signal = check_exit(
-                trader.position["entry"],
-                current_price
-            )
-
-            if exit_signal:
-                st.write("EXIT PRICE =", current_price)
-
-                trader.sell(current_price)
-
-                send_alert(
-                    f"AUTO EXIT\nSymbol: {symbol}\nReason: {exit_signal}\nPrice: {current_price}"
-                )
-
-        if result == "BUY":
-            send_alert(
-                f"BUY Signal\nSymbol: {symbol}\nPrice: {current_price}"
-            )
-    
-        elif result == "SELL":
-            send_alert(
-                f"SELL Signal\nSymbol: {symbol}\nPrice: {current_price}"
-            )
-            
     volume_ratio = (
         data["Volume"] / data["AVG_VOLUME"]
         if data["AVG_VOLUME"] > 0 else 1
@@ -403,23 +441,144 @@ if st.button("Run Scanner"):
     )
 
     score = signal_score(
-        data["RSI"],
-        volume_ratio,
-        trend,
-        data["MACD"],
-        data["MACD_SIGNAL"],
-        data["SUPERTREND"]
-
+            data["RSI"],
+            volume_ratio,
+            trend,
+            data["MACD"],
+            data["MACD_SIGNAL"],
+            data["SUPERTREND"]
     )
+
+    ai = ai_brain(
+        signal=result,
+        rsi=data["RSI"],
+        volume=data["Volume"],
+        trend=trend,
+        ema9=data["EMA9"],
+        ema21=data["EMA21"],
+        supertrend=data["SUPERTREND"],
+        balance=trader.balance,
+        risk_percent=2,
+        trade_amount=current_price
+    )
+
+    confidence = confidence_score(
+        ai["score"],
+        ai["regime"],
+        ai["filter"]
+    )
+    stoploss, target = stop_target(current_price)
+
+    qty = position_size(
+    trader.balance,
+    2,
+    abs(current_price - stoploss)
+)
+    risk_ok, risk_message = daily_risk_manager(
+    trades_today=0,
+    losses_today=0,
+    daily_loss=0
+)
+
+    st.info(f"🛡️ Risk Manager : {risk_message}")
+
+    # AI AUTO TRADING
+
+    if ai["decision"] == "BUY" and trader.position is None and risk_ok:
+   
+        trader.buy(symbol, current_price, qty)
+        save_trade(
+            symbol=symbol,
+            action="BUY",
+            entry=current_price,
+            stoploss=stoploss,
+            target=target,
+            qty=qty,
+            confidence=confidence,
+            score=score,
+            regime=ai["regime"]
+        )
+
+        st.success(
+            f"""
+     🤖 AI AUTO TRADE EXECUTED
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+     📈 Symbol        : {symbol}
+     🟢 Action        : BUY
+     💰 Entry Price   : ₹{current_price:.2f}
+     📦 Quantity      : {qty}
+     🛑 Stop Loss     : ₹{stoploss:.2f}
+     🎯 Target Price  : ₹{target:.2f}
+     🧠 AI Confidence : {confidence}%
+     ⭐ AI Score       : {score}
+     📊 Market Regime : {ai["regime"]}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+     ✅ Trade Executed Successfully
+     """
+         )
+
+    elif ai["decision"] == "SELL" and trader.position:
+    
+        entry_price = trader.position["entry"]
+
+        trader.sell(current_price)
+
+        if current_price > entry_price:
+            result_type = "WIN"
+        else:
+            result_type = "LOSS"
+
+        update_learning(
+            strategy_name,
+            ai["regime"],
+            result_type
+        )
+
+        st.error("🔴 AI AUTO SELL EXECUTED")
+
+
+    elif ai["decision"] == "HOLD":
+
+        st.info("🟡 AI Decision : HOLD")
+
+
+    else:
+
+        st.warning("⚪ AI Decision : NO TRADE")
+
+    
+    # AUTO EXIT
+
+    if trader.position:
+
+        stoploss = trailing_stop(
+            trader.position["entry"],
+            current_price,
+            stoploss
+        )
+
+        if current_price <= stoploss:
+
+            trader.sell(current_price)
+            st.warning("🛑 AI Trailing Stop Hit")
+
+        elif current_price >= target:
+
+           trader.sell(current_price)
+           st.success("🎯 AI Target Hit")
 
     col1, col2, col3, col4 = st.columns(4)
 
     col1.metric("Signal", result)
     col2.metric("MACD", round(data["MACD"], 2))
     col3.metric("RSI", round(data["RSI"], 2))
-    col4.metric("AI Score", score)
-
-    st.subheader("AI Trade Filter")
+    col4.metric("Confidence", f"{confidence}%")
+       
+st.subheader("AI Trade Filter")
 
 try:
     if score >= 70:
@@ -462,6 +621,7 @@ st.write("Current Symbol:", symbol)
 st.write("Quantity:", 1)
 
 st.subheader("Reports")
+
 report = generate_report(
     total_trades=10,
     winning_trades=7,
@@ -473,17 +633,63 @@ report = generate_report(
     broker_status="Connected"
 )
 st.text(report)
+
 st.subheader("Trade History")
+
 import os
 
 st.write("Current Folder:", os.getcwd())
+
 st.write("Trade File Exists:", os.path.exists("trade_history.csv"))
 
 try:
-    df = pd.read_csv("trade_history.csv")
-    st.dataframe(df)
+    df = pd.read_csv(
+        "trade_history.csv",
+        encoding="utf-8"
+    )
+
+    if df.empty:
+        st.info("No Trade History Found")
+    else:
+        st.dataframe(df, use_container_width=True)
+    
+        st.download_button(
+            "📥 Download Trade History",
+            df.to_csv(index=False),
+            file_name="trade_history.csv",
+            mime="text/csv"
+        )
+        st.subheader("💰 Live Trading Summary")
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.metric("Balance", f"₹{trader.balance:,.2f}")
+
+        with col2:
+            if trader.position:
+                st.metric("Open Position", trader.position["symbol"])
+            else:
+                st.metric("Open Position", "None")
+
+        with col3:
+            if trader.position and "current_price" in locals():
+                live_pnl = (
+                    current_price - trader.position["entry"]
+                ) * trader.position["qty"]
+
+                st.metric(
+                    "Live P&L",
+                    f"₹{live_pnl:.2f}"
+                )
+            else:
+                st.metric("Live P&L", "₹0.00")
+
+except FileNotFoundError:
+    st.warning("trade_history.csv not found")
+
 except Exception as e:
-    st.error(str(e))
+    st.error(f"Trade History Error: {e}")
 
 st.subheader("Risk Manager")
 
@@ -565,6 +771,7 @@ try:
 
 except:
     st.info("No PnL Data Available")
+
 st.subheader("Live Equity Curve")
 
 try:
@@ -605,6 +812,7 @@ except:
 
 st.subheader("Live Market Chart")
 
+
 try:
 
     chart_data = yf.download(
@@ -615,10 +823,12 @@ try:
 
     close_data = chart_data["Close"]
 
+
     if isinstance(close_data, pd.DataFrame):
         close_data = close_data.iloc[:, 0]
 
     current_price = float(close_data.iloc[-1])
+    
     st.subheader("📍 Support & Resistance")
 
     support = round(current_price - 150, 2)
@@ -632,7 +842,6 @@ try:
     with col2:
         st.metric("Resistance", f"₹{resistance}")
 
-
     day_high = chart_data["High"].max()
     if isinstance(day_high, pd.Series):
         day_high = day_high.iloc[0]
@@ -643,7 +852,7 @@ try:
         day_low = day_low.iloc[0]
     day_low = float(day_low)
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
 
     with col1:
         st.metric(
@@ -662,6 +871,68 @@ try:
             "Day Low",
             f"₹{day_low:.2f}"
         )
+    with col4:
+        st.metric(
+        "Paper Balance",
+        f"₹{trader.balance:,.2f}"
+    )
+        if trader.position:
+            st.success(
+                f"🟢 Active Trade : {trader.position['symbol']}"
+            )
+
+            st.write(
+                f"Entry : ₹{trader.position['entry']:.2f}"
+            )
+
+            st.write(
+                f"Qty : {trader.position['qty']}"
+            )
+
+        else:
+            st.info("No Active Position")
+
+        if trader.position:
+            st.success(
+                f"Open Position : {trader.position['symbol']} | "
+                f"Entry : ₹{trader.position['entry']:.2f}"
+            )
+            if trader.position:
+
+                live_pnl = (
+                    current_price - trader.position["entry"]
+                ) * trader.position["qty"]
+
+                st.metric(
+                    "Live P&L",
+                    f"₹{live_pnl:.2f}"
+                )
+        else:
+            st.info("No Open Position")
+        
+    with col5:
+        if trader.position:
+            st.metric(
+                "Position",
+                f"{trader.position['symbol']}"
+            )
+        else:
+            st.metric(
+                "Position",
+                "No Trade"
+            )
+
+    with col6:
+        if trader.position:
+            st.metric(
+                "Entry Price",
+                f"₹{trader.position['entry']:.2f}"
+            )
+        else:
+            st.metric(
+                "Entry Price",
+                "-"
+            )
 
     ema9 = close_data.ewm(span=9).mean()
     ema21 = close_data.ewm(span=21).mean()
@@ -671,30 +942,32 @@ try:
         "EMA9": ema9,
         "EMA21": ema21
     })
-
     
+
     fig = make_subplots(
     rows=2,
     cols=1,
     shared_xaxes=True,
     vertical_spacing=0.03,
     row_heights=[0.75, 0.25]
-)
 
-   fig.add_trace(
-       go.Candlestick(
-           x=chart_data.index,
-           open=chart_data["Open"],
-           high=chart_data["High"],
-           low=chart_data["Low"],
-           close=chart_data["Close"],
-           name="Candlestick"
-     ),
-     row=1,
-     col=1
-)
+  )  
 
-fig.update_layout(
+
+    fig.add_trace(
+        go.Candlestick(
+            x=chart_data.index,
+            open=chart_data["Open"],
+            high=chart_data["High"],
+            low=chart_data["Low"],
+            close=chart_data["Close"],
+            name="Candlestick"
+        ),
+        row=1,
+        col=1
+    )
+
+    fig.update_layout(
     title="📈 Live Candlestick Chart",
     xaxis_title="Time",
     yaxis_title="Price",
@@ -711,36 +984,54 @@ fig.update_layout(
     )
 )
 
-st.plotly_chart(
-    fig,
-    use_container_width=True
+
+    fig.add_trace(
+       go.Scatter(
+          x=chart_data.index,
+          y=ema9,
+          mode="lines",
+          name="EMA 9",
+          line=dict(color="blue", width=2)
+    ),
+    row=1,
+    col=1
 )
 
+    fig.add_trace(
+        go.Scatter(
+           x=chart_data.index,
+           y=ema21,
+           mode="lines",
+           name="EMA 21",
+           line=dict(color="orange", width=2)
+    ),
+    row=1,
+    col=1
+)
 
-  
+    fig.add_trace(
+        go.Bar(
+           x=chart_data.index,
+           y=chart_data["Volume"],
+           name="Volume",
+           marker_color="skyblue"
+    ),
+    row=2,
+    col=1
+)
     
-    fig.add_trace(
-    go.Scatter(
-        x=chart_data.index,
-        y=ema9,
-        mode="lines",
-        name="EMA 9",
-        line=dict(color="blue", width=2)
-    ),
-    row=1,
-    col=1
-)
+    fig.add_hline(
+        y=support,
+        line_color="green",
+        line_width=2,
+        annotation_text=f"Support ₹{support}"
+    )
 
-    fig.add_trace(
-    go.Scatter(
-        x=chart_data.index,
-        y=ema21,
-        mode="lines",
-        name="EMA 21",
-        line=dict(color="orange", width=2)
-    ),
-    row=1,
-    col=1
+    fig.add_hline(
+        y=resistance,
+        line_color="red",
+        line_width=2,
+        annotation_text=f"Resistance ₹{resistance}"
         
 )
 
@@ -751,6 +1042,9 @@ st.plotly_chart(
         data["Volume"],
         data["AVG_VOLUME"]
     )
+    if signal == "BUY":
+        if trader.position is None:
+            trader.buy(symbol, current_price, 1)
 
     if signal == "BUY":
         fig.add_annotation(
@@ -758,7 +1052,9 @@ st.plotly_chart(
         y=current_price,
         text="🟢 BUY",
         showarrow=True,
-        arrowhead=2
+        arrowhead=2,
+        arrowcolor="green"
+
     )
         
     elif signal == "SELL":
@@ -767,33 +1063,130 @@ st.plotly_chart(
         y=current_price,
         text="🔴 SELL",
         showarrow=True,
-        arrowhead=2
-    )
-    fig.add_hline(
-        y=support,
-        line_color="yellow",
-        line_width=2,
-        annotation_text=f"Support ₹{support}"
-    )
+        arrowhead=2,
+        arrowcolor="red"
 
-    fig.add_hline(
-        y=resistance,
-        line_color="yellow",
-        line_width=2,
-        annotation_text=f"Resistance ₹{resistance}"
     )
-    fig.add_trace(
-        go.Bar(
-          x=chart_data.index,
-          y=chart_data["Volume"],
-          name="Volume",
-          marker_color="cyan"
-    ),
-    row=2,
-    col=1
-)
-
+    
     st.plotly_chart(fig, use_container_width=True)
+    
+except Exception as e:
+    st.error(f"Chart Error: {e}")
+
+    st.subheader("📜 Trade History")
+
+try:
+    history = pd.read_csv("trade_history.csv")
+
+    st.dataframe(
+        history,
+        use_container_width=True
+    )
+
+except Exception as e:
+    st.error(e)
+
+
+st.subheader("📊 Performance")
+
+try:
+    history = pd.read_csv("trade_history.csv")
+
+    total_trades = len(history)
+
+    winning = len(history[history["PNL"] > 0])
+
+    losing = len(history[history["PNL"] < 0])
+
+    total_profit = history["PNL"].sum()
+
+    win_rate = (
+        winning / total_trades * 100
+        if total_trades > 0 else 0
+    )
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    with c1:
+        st.metric(
+            "Total Trades",
+            total_trades
+        )
+
+    with c2:
+        st.metric(
+            "Winning",
+            winning
+        )
+
+    with c3:
+        st.metric(
+            "Losing",
+            losing
+        )
+
+    with c4:
+        st.metric(
+            "Win Rate",
+            f"{win_rate:.1f}%"
+        )
+
+    st.metric(
+        "Net Profit",
+        f"₹{total_profit:.2f}"
+    )
+
+except Exception as e:
+    st.error(e)
+st.subheader("🧠 AI Learning Report")
+
+learning = load_learning()
+
+strategies = learning.get("strategies", {})
+
+if strategies:
+
+    for strategy, info in strategies.items():
+
+        wins = info.get("wins", 0)
+        losses = info.get("losses", 0)
+
+        total = wins + losses
+        accuracy = round((wins / total) * 100, 1) if total > 0 else 0
+
+        st.success(
+            f"""
+📌 Strategy : {strategy}
+
+✅ Wins : {wins}
+
+❌ Losses : {losses}
+
+🎯 Accuracy : {accuracy}%
+"""
+        )
+
+else:
+
+    st.info("AI has not learned any trades yet.")
+
+best = best_strategy()
+
+if best != "No Data":
+
+    strategy, accuracy = best
+
+    st.success(
+        f"""
+🏆 Best AI Strategy
+
+📌 Strategy : {strategy}
+
+🎯 Accuracy : {accuracy}%
+"""
+    )
+
+   
     
 
     st.subheader("RSI & MACD")
@@ -884,10 +1277,6 @@ st.plotly_chart(
         st.metric("Target", f"₹{target:.2f}")
 
     st.success(f"Risk : Reward = 1 : {rr}")
-
-except Exception as e:
-    st.error(e)
-
 
 
 st.subheader("Auto Trading Control")
