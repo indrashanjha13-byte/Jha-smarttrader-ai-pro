@@ -63,6 +63,9 @@ def place_trade(signal, symbol, qty, current_price):
     # SELL
     # ==========================
     elif signal == "SELL":
+        execute_sell(symbol, qty)
+        print(f"SELL Executed: {symbol} Qty={qty}")
+        last_signal = "SELL"
 
         if not exit_manager.trade_open:
             print("⚠ No Open Trade")

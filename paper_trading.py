@@ -19,11 +19,17 @@ class PaperTrader:
 
         cost = price * qty
 
+        print("Balance =", self.balance)
+        print("Cost =", cost)
+        print("Qty =", qty)
+        print("Price =", price)
+
         if cost > self.balance:
             return False, "❌ Insufficient Balance"
 
         self.balance -= cost
 
+        # Position Save
         self.position = {
             "symbol": symbol,
             "entry": price,
@@ -134,6 +140,8 @@ class PaperTrader:
         stoploss,
         pnl
     ):
+
+        file_exists = os.path.exists("trade_history.csv")
 
         file_exists = os.path.exists("trade_history.csv")
 
