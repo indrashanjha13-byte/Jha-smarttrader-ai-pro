@@ -1,6 +1,19 @@
-def predict_trade():
+def predict_trade(signal, rsi, macd):
 
-    prediction = "BUY"
-    confidence = 85
+    confidence = 50
 
-    return prediction, confidence
+    if signal == "BUY":
+        confidence += 20
+
+    elif signal == "SELL":
+        confidence += 20
+
+    if rsi > 60 or rsi < 40:
+        confidence += 15
+
+    if macd > 0 or macd < 0:
+        confidence += 15
+
+    confidence = min(confidence, 100)
+
+    return signal, confidence

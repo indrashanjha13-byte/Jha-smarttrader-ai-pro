@@ -1,59 +1,193 @@
 from pathlib import Path
-from PIL import Image
+from datetime import datetime
 import streamlit as st
 import pandas as pd
-from signals import get_signals
-from strategy import generate_signal
-from ai_signal_ranker import signal_score
-from paper_trading import PaperTrader
-from telegram_bot import send_alert
-from portfolio import update_position
-from report import generate_report
-from portfolio_manager import can_trade
-from auto_trader import place_trade
-from position_sizing import calculate_qty
-from trade_analytics import get_trade_stats
-from ai_predict import predict_trade
-import plotly.graph_objects as go
 import yfinance as yf
-from auto_mode import (
-    enable_auto,
-    disable_auto,
-    is_enabled
-)
-from datetime import datetime
-from paper_trading import check_exit
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from PIL import Image
+
+from streamlit_autorefresh import st_autorefresh
+
+# ------------------------
+# Project Imports
+# ------------------------
+
+from signals import get_signals
+
 from strategy import (
     generate_signal,
     ema_signal,
     rsi_signal,
     supertrend_signal
 )
-from ai_signal_ranker import signal_score
-st.set_page_config(
 
-    
-    page_title="SmartTrader AI Pro",
+from ai_engine import (
+    ai_brain,
+    confidence_score,
+    stop_target,
+    position_size,
+    trailing_stop,
+    daily_risk_manager
+)
+
+from ai_signal_ranker import signal_score
+
+from paper_trading import PaperTrader
+
+from ai_learning import (
+    load_learning,
+    update_learning,
+    best_strategy,
+    auto_strategy
+)
+
+from market_memory import best_market_strategy
+from auto_mode import (
+    enable_auto,
+    disable_auto,
+    is_enabled,
+    get_scan_interval
+)
+from option_chain import scan_all_option_chain
+from fo_symbols import INDICES, FO_STOCKS
+import plotly.express as px
+from broker.broker_manager import BrokerManager
+from backtest_engine import BacktestEngine
+from settings_manager import load_settings, save_settings
+from paper_trading import PaperTrader
+from pages.dashboard_page import dashboard_page
+from pages.market_page import market_page
+from pages.portfolio_page import portfolio_page
+from pages.reports_page import reports_page
+from pages.settings_page import settings_page
+from pages.trading_page import trading_page
+print(PaperTrader)
+print(PaperTrader.__module__)
+print(dir(PaperTrader))
+
+
+# ------------------------
+# Streamlit Config
+# ------------------------
+
+st.set_page_config(
+    page_title="Jha SmartTrader AI Pro",
+    page_icon="📈",
     layout="wide"
 )
+
+st.markdown("""
+<style>
+
+.block-container{
+    padding-top:1rem;
+}
+
+div[data-testid="stMetric"]{
+    background:#1b1f2a;
+    border-radius:15px;
+    padding:15px;
+    border:1px solid #2f3545;
+    box-shadow:0px 0px 10px rgba(0,0,0,0.3);
+}
+
+div[data-testid="stMetric"]:hover{
+    border:1px solid #00ff88;
+    transform:scale(1.02);
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+# ------------------------
+# Auto Refresh
+# ------------------------
+
+st_autorefresh(
+    interval=15000,
+    key="market_refresh"
+)
+
+# ------------------------
+# Session
+# ------------------------
+
+if "trader" not in st.session_state:
+    st.session_state.trader = PaperTrader()
+
+trader = st.session_state.trader
+
+if "backtester" not in st.session_state:
+    st.session_state.backtester = BacktestEngine()
+
+backtester = st.session_state.backtester
+
+
+# ==========================
+# Load Saved Settings
+# ==========================
+settings = load_settings()
+
+# ------------------------
+# Logo
+# ------------------------
+
 BASE_DIR = Path(__file__).resolve().parent
 
-logo_path = BASE_DIR / "logo.png"
-if logo_path.exists():
+logo = BASE_DIR / "logo.png"
+
+if logo.exists():
+
     try:
-        logo =Image.open(logo_path)
-        st.image(logo,width=150)
+
+        st.image(
+            Image.open(logo),
+            width=150
+        )
+
     except:
         pass
-st.title("📈 SmartTrader AI Pro")
-symbol = st.selectbox(
-    "Symbol",
-    ["^NSEI", "^NSEBANK", "RELIANCE.NS", "TCS.NS", "INFY.NS"]
+
+# ------------------------
+# Sidebar
+# ------------------------
+
+st.sidebar.markdown("## 📈 Jha SmartTrader AI Pro")
+st.sidebar.caption("AI Powered Trading Terminal")
+
+st.sidebar.divider()
+
+st.sidebar.success("🟢 Market : OPEN")
+st.sidebar.info("💰 Balance : ₹100000")
+st.sidebar.write("🤖 AI : ACTIVE")
+st.sidebar.write("🏦 Broker : Kotak Neo")
+
+st.sidebar.divider()
+
+page = st.sidebar.radio(
+
+    "📂 Navigation",
+
+    [
+        "🏠 Dashboard",
+        "📈 Market",
+        "🤖 AI",
+        "💰 Trading",
+        "📦 Portfolio",
+        "📊 Reports",
+        "⚙ Settings",
+        "👤 Broker"
+    ]
+
 )
-stock_list = [
-    "^NSEI",         # Nifty 50
-    "^NSEBANK",      # Bank Nifty
-    "^BSESN",        # Sensex
+
+st.sidebar.title("⚙ Settings")
+
+symbols = [
+    "^NSEI",
+    "^NSEBANK",
+    "^BSESN",
     "RELIANCE.NS",
     "TCS.NS",
     "INFY.NS",
@@ -63,497 +197,128 @@ stock_list = [
     "LT.NS",
     "AXISBANK.NS"
 ]
-if st.button("AI Multi Scanner"):
 
-    st.subheader("Top AI Scanner")
-
-    results = []
-
-    for stock in stock_list:
-
-        data = get_signals(stock)
-
-        if "error" in data:
-            continue
-
-        result = generate_signal(
-            data["SUPERTREND"],
-            data["MACD"],
-            data["MACD_SIGNAL"],
-            data["Volume"],
-            data["AVG_VOLUME"]
-        )
-        st.write("Stock:", stock)
-        st.write("RSI:", data["RSI"])
-        st.write("MACD:", data["MACD"])
-        st.write("MACD SIGNAL:", data["MACD_SIGNAL"])
-        st.write("SUPERTREND:", data["SUPERTREND"])
-        st.write("VOLUME:", data["Volume"])
-
-        volume_ratio = (
-            data["Volume"] / data["AVG_VOLUME"]
-            if data["AVG_VOLUME"] > 0 else 1
-        )
-
-        trend = (
-            "UP"
-            if data["SUPERTREND"] > 0
-            else "DOWN"
-        )
-
-        score = signal_score(
-            data["RSI"],
-            volume_ratio,
-            trend,
-            data["MACD"],
-            data["MACD_SIGNAL"],
-            data["SUPERTREND"]
-        )
-        if score >= 90:
-            confidence = 98
-        elif score >= 80:
-            confidence = 90
-        elif score >= 70:
-            confidence = 80
-        elif score >= 60:
-            confidence = 70
-        else:
-            confidence = 55
-        
-
-        results.append([stock, result, score, confidence])
-        results = sorted(
-            results,
-            key=lambda x: x[2],
-            reverse=True
-        )
-
-    st.subheader("AI Ranking")
-
-    for stock, signal, score, confidence in results[:5]:
-        
-
-        if signal == "BUY":
-            st.success(
-    f"🟢 {stock} ➜ BUY ⭐ {score} | 🎯 {confidence}%"
+symbol = st.sidebar.selectbox(
+    "Select Symbol",
+    symbols,
+    index=symbols.index(settings["symbol"])
 )
-            
-        elif signal == "SELL":
-            st.error(
-    f"🔴 {stock} ➜ SELL ⭐ {score} | 🎯 {confidence}%"
+
+strategies = [
+    "EMA Crossover",
+    "RSI",
+    "SuperTrend",
+    "MACD + Volume",
+    "AI Combo"
+]
+
+strategy_name = st.sidebar.selectbox(
+    "Strategy",
+    strategies,
+    index=strategies.index(settings["strategy"])
 )
-        else:
-            st.warning(
-    f"🟡 {stock} ➜ NO TRADE ⭐ {score} | 🎯 {confidence}%"
-)
-strategy_name = st.selectbox(
-    "Select Strategy",
-    [
-        "EMA Crossver",
-        "RSI",
-        "SuperTrend",
-        "MACD + Volume",
-        "AI Combo"
-    ]
-)
-# Option Selection
-st.subheader("option Selection")
 
-option_side = st.selectbox(
-    "Option Type",
-    ["CE", "PE"]
-)
-strike_mode = st.selectbox(
-    "Strike Selection",
-    ["ITM", "ATM", "OTM"]
-)
-st.write(f"Selected: {strike_mode}{option_side}")
+if strategy_name == "AI Combo":
 
-if "trader" not in st.session_state:
-    st.session_state.trader = PaperTrader()
+    strategy_name = auto_strategy()
 
-trader = st.session_state.trader
-
-st.subheader("Paper Trading")
-
-if st.button("Paper Buy"):
-    trader.buy(symbol, 500, 1)
-    st.success("Paper Buy Executed")
-
-if st.button("Paper Sell"):
-    trader.sell(530)
-    st.success("Paper Sell Executed")
-
-st.write("Balance:", trader.balance)
-
-if st.button("Run Scanner"):
-
-    data = get_signals(symbol)
-
-    if "error" in data:
-        st.error(data["error"])
-
-    else:
-        if strategy_name == "EMA Crossover":
-            result = ema_signal(
-                data["EMA9"],
-                data["EMA21"]
-            )
-
-        elif strategy_name == "RSI":
-            result = rsi_signal(
-                data["RSI"]
-            )
-        elif strategy_name =="SuperTrend":
-            result = supertrend_signal(
-                data["SUPERTREND"]
-            )
-        elif strategy_name == "MACD + Volume":
-            
-            result =generate_signal(
-                data["SUPERTREND"],
-                data["MACD"],
-                data["MACD_SIGNAL"],
-                data["Volume"],
-                data["AVG_VOLUME"],
-            )
-        else:
-            result = generate_signal(
-                data["SUPERTREND"],
-                data["MACD"],
-                data["MACD_SIGNAL"],
-                data["Volume"],
-                data["AVG_VOLUME"]
-            )
-        
-        st.write("SUPERTREND:", data["SUPERTREND"])
-        st.write("MACD:", data["MACD"])
-        st.write("MACD SIGNAL:", data["MACD_SIGNAL"])
-        st.write("VOLUME:", data["Volume"])
-        st.write("AVG VOLUME:", data["AVG_VOLUME"])
-
-        current_price = data["Close"]
-        st.write("Signal =", result)
-        st.write("Current Position =", trader.position)
-        
-        st.write("SYMBOL =", symbol)
-        st.write("CLOSE =", current_price)
-
-        # AUTO PAPER BUY
-        if result == "BUY" and trader.position is None:
-
-            trader.buy(
-                symbol,
-                current_price,
-                1
-            )
-            st.success("✅ AUTO PAPER BUY EXECUTED")
-            
-
-            send_alert(
-                f"AUTO BUY\nSimbol: {symbol}\nPrice: {current_price}"
-            )
-
-        # AUTO EXIT
-        if trader.position:
-
-            exit_signal = check_exit(
-                trader.position["entry"],
-                current_price
-            )
-
-            if exit_signal:
-                st.write("EXIT PRICE =", current_price)
-
-                trader.sell(current_price)
-
-                send_alert(
-                    f"AUTO EXIT\nSymbol: {symbol}\nReason: {exit_signal}\nPrice: {current_price}"
-                )
-
-        if result == "BUY":
-            send_alert(
-                f"BUY Signal\nSymbol: {symbol}\nPrice: {current_price}"
-            )
-    
-        elif result == "SELL":
-            send_alert(
-                f"SELL Signal\nSymbol: {symbol}\nPrice: {current_price}"
-            )
-            
-    volume_ratio = (
-        data["Volume"] / data["AVG_VOLUME"]
-        if data["AVG_VOLUME"] > 0 else 1
+    st.sidebar.success(
+        f"🤖 AI Selected Strategy : {strategy_name}"
     )
 
-    trend = (
-        "UP"
-        if data["SUPERTREND"] > 0
-        else "DOWN"
-    )
+options = ["CE", "PE"]
 
-    score = signal_score(
-        data["RSI"],
-        volume_ratio,
-        trend
-    )
-
-    col1, col2, col3, col4 = st.columns(4)
-
-    col1.metric("Signal", result)
-    col2.metric("MACD", round(data["MACD"], 2))
-    col3.metric("RSI", round(data["RSI"], 2))
-    col4.metric("AI Score", score)
-
-    st.subheader("AI Trade Filter")
-
-try:
-    if score >= 70:
-        st.success("High Quality Trade")
-
-    elif score >= 50:
-        st.warning("Average Quality Trade")
-
-    else:
-        st.error("Avoid This Trade")
-
-except:
-    st.info("Run Scanner First")
-
-       # st.write("Entry:", result["entry"])
-       # st.write("Stop Loss:", result["stoploss"])
-       # st.write("Target:", result["target"])
-
-st.header("SmartTrader AI Pro Dashboard")
-
-if st.button("Start Trading"):
-    enable_auto()
-    st.success("Trading Started")
-
-if st.button("Stop Trading"):
-    disable_auto()
-    st.warning("Trading Stopped")
-
-st.write(
-    "Trading Status:",
-    "🟢 RUNNING" if is_enabled() else "🔴 STOPPED"
-)
-st.subheader("Strategy")
-st.write("SuperTrend + MACD + Volume Filter")
-
-st.subheader("Add To Portfolio")
-update_position(symbol, 1)
-st.success("Portfolio Updated")
-st.write("Current Symbol:", symbol)
-st.write("Quantity:", 1)
-
-st.subheader("Reports")
-report = generate_report(
-    total_trades=10,
-    winning_trades=7,
-    losing_trades=3,
-    net_profit=5000,
-    daily_pnl=500,
-    monthly_pnl=5000,
-    open_positions=1,
-    broker_status="Connected"
-)
-st.text(report)
-st.subheader("Trade History")
-import os
-
-st.write("Current Folder:", os.getcwd())
-st.write("Trade File Exists:", os.path.exists("trade_history.csv"))
-
-try:
-    df = pd.read_csv("trade_history.csv")
-    st.dataframe(df)
-except Exception as e:
-    st.error(str(e))
-
-st.subheader("Risk Manager")
-
-open_positions = st.number_input(
-    "Open Positions",
-    min_value=0,
-    value=0
+option_side = st.sidebar.selectbox(
+    "Option",
+    options,
+    index=options.index(settings["option"])
 )
 
-if can_trade(open_positions):
-    st.success("Trade Allowed")
-else:
-    st.error("Maximum Open Trades Reached")
-    
-st.subheader("Position Sizing")
+strikes = ["ITM", "ATM", "OTM"]
 
-capital = st.number_input(
-    "Capital",
-    value=100000
+strike_mode = st.sidebar.selectbox(
+    "Strike",
+    strikes,
+    index=strikes.index(settings["strike"])
 )
 
-entry_price = st.number_input(
-    "Entry Price",
-    value=500
+# =====================================
+# DASHBOARD PAGE
+# =====================================
+
+if page == "🏠 Dashboard":
+
+    signal = get_signals(symbol)
+    current_price = signal["Close"]
+
+    dashboard_page(
+
+    trader=trader,
+
+    current_price=current_price,
+
+    symbol=symbol
+
 )
 
-stoploss_price = st.number_input(
-    "Stoploss Price",
-    value=480
-)
 
-qty = calculate_qty(
-    capital,
-    entry_price,
-    stoploss_price
-)
 
-st.write("Suggested Quantity:", qty)
-st.subheader("Trade Analytics")
+# ------------------------
+# Scanner Button
+# ------------------------
 
-stats = get_trade_stats()
+run_scan = st.button("🚀 Run Scanner")
 
-st.write("Total Trades:", stats["total"])
-st.write("Buy Trades:", stats["buy"])
-st.write("Sell Trades:", stats["sell"])
-st.write("Win Rate:", stats["win_rate"], "%")
-st.subheader("AI Prediction")
 
-prediction, confidence = predict_trade()
+AUTO_SCAN = False
 
-st.write("Prediction:", prediction)
-st.write("Confidence:", confidence, "%")
-try:
+if is_enabled():
+    AUTO_SCAN = True
 
-    total_trades = len(df)
+if AUTO_SCAN:
+    run_scan = True
 
-    st.write("Total Trades:", total_trades)
+if is_enabled():
 
-except:
-    st.info("No Analytics Data")
-st.subheader("Live Profit / Loss")
+    st.success("🤖 AUTO TRADING RUNNING")
 
-try:
-    df = pd.read_csv("trade_history.csv")
+    #time.sleep(get_scan_interval())
 
-    buy_count = len(df[df["Side"] == "BUY"])
-    sell_count = len(df[df["Side"] == "SELL"])
+    run_scan = True
 
-    total_pnl = (sell_count - buy_count) * 30
 
-    st.metric(
-        "Net Profit/Loss",
-        f"₹{total_pnl}"
-    )
+# =====================================
+# MARKET PAGE
+# =====================================
 
-except:
-    st.info("No PnL Data Available")
-st.subheader("Live Equity Curve")
+if page == "📈 Market":
 
-try:
-    df = pd.read_csv("trade_history.csv")
-
-    df["Trade No"] = range(
-        1,
-        len(df) + 1
-    )
-
-    st.line_chart(df["Trade No"])
-
-except:
-    st.info("No Chart Data")    
-st.subheader("Live Market Statistics")
-
-try:
-
-    data = get_signals(symbol)
-
-    st.metric(
-        "RSI",
-        round(data["RSI"], 2)
-    )
-
-    st.metric(
-        "MACD",
-        round(data["MACD"], 2)
-    )
-
-    st.metric(
-        "Volume",
-        int(data["Volume"])
-    )
-
-except:
-    st.info("Market Data Not Available")
-
-st.subheader("Live Market Chart")
-
-try:
-
-    chart_data = yf.download(
+    market_page(
         symbol,
-        period="5d",
-        interval="15m"
+        trader,
+        INDICES,
+        FO_STOCKS,
+        scan_all_option_chain,
+        get_signals
     )
+# =====================================
+# TRADING PAGE
+# =====================================
 
-    fig = go.Figure(
-        data=[
-            go.Candlestick(
-                x=chart_data.index,
-                open=chart_data["Open"],
-                high=chart_data["High"],
-                low=chart_data["Low"],
-                close=chart_data["Close"]
-            )
-        ]
+if page == "💰 Trading":
+
+    trading_page(
+        trader=trader,
+        symbol=symbol
     )
+# ==========================================================
 
-    st.plotly_chart(
-        fig,
-        use_container_width=True
-    )
+st.divider()
 
-except:
-    st.info("Chart Not Available")
-st.subheader("Auto Trading Control")
+st.success("✅ Jha SmartTrader AI Pro Loaded Successfully")
 
-if st.button("Enable Auto Trading"):
-    enable_auto()
-    st.success("Auto Trading Enabled")
+st.caption(
 
-if st.button("Disable Auto Trading"):
-    disable_auto()
-    st.warning("Auto Trading Disabled")
+    f"Last Refresh : {datetime.now()}"
 
-st.write(
-    "Status:",
-    "ON" if is_enabled() else "OFF"
 )
-st.subheader("Broker Login Panel")
-
-broker = st.selectbox(
-    "Select Broker",
-    ["Kotak Neo", "Angel One", "Upstox", "Zerodha"]
-)
-
-api_key = st.text_input(
-    "API Key",
-    type="password"
-)
-
-if st.button("Connect Broker"):
-    st.success(f"{broker} Connected")
-st.success("🟢 Software Running")
-st.write("Last Check:", datetime.now())
-try:
-    if data is not None:
-        st.success("🟢 Data Connected")
-    else:
-        st.error("🔴 Data Disconnected")
-except:
-    st.warning("🟡 Run Scanner First")
-
-st.subheader("Telegram Test")
-
-if st.button("Test Telegram"):
-    send_alert("Telegram Test Successful ✅")
-    st.success("Test Message Sent")

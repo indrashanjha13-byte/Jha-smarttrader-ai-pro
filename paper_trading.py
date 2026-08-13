@@ -1,5 +1,9 @@
 import csv
+import os
 from datetime import datetime
+
+from ai_learning import update_learning
+
 
 class PaperTrader:
 
@@ -7,71 +11,172 @@ class PaperTrader:
         self.balance = 100000
         self.position = None
 
-    def buy(self, symbol, price, qty):
+    # ==========================================
+    # BUY
+    # ==========================================
+
+    def buy(self, symbol, price, qty, target, stoploss):
 
         cost = price * qty
 
         if cost > self.balance:
-            print("Insufficient Balance")
-            return
+            return False, "❌ Insufficient Balance"
 
         self.balance -= cost
 
         self.position = {
             "symbol": symbol,
             "entry": price,
-            "qty": qty
+            "qty": qty,
+            "target": target,
+            "stoploss": stoploss,
+            "entry_time": datetime.now()
         }
 
-        self.save_trade("BUY", symbol, price, qty, 0)
-
-        print(f"BUY {symbol} @ {price}")
-
-    def sell(self, price):
-        print("SELL PRICE RECEIVED =", price)
-
-        if not self.position:
-            return
-
-        pnl = (
-            (price - self.position["entry"])
-            * self.position["qty"]
+        self.save_trade(
+            action="BUY",
+            symbol=symbol,
+            entry=price,
+            exit_price="",
+            qty=qty,
+            target=target,
+            stoploss=stoploss,
+            pnl=0
         )
 
-        self.balance += (
-            price * self.position["qty"]
-        )
+        return True, "✅ BUY Order Executed"
+
+    # ==========================================
+    # SELL
+    # ==========================================
+
+    def sell(self, current_price):
+
+        if self.position is None:
+            return False, "❌ No Active Position"
+
+        symbol = self.position["symbol"]
+        entry = self.position["entry"]
+        qty = self.position["qty"]
+        target = self.position["target"]
+        stoploss = self.position["stoploss"]
+
+        pnl = round((current_price - entry) * qty, 2)
+
+        self.balance += current_price * qty
 
         self.save_trade(
-            "SELL",
-            self.position["symbol"],
-            price,
-            self.position["qty"],
-            pnl
+            action="SELL",
+            symbol=symbol,
+            entry=entry,
+            exit_price=current_price,
+            qty=qty,
+            target=target,
+            stoploss=stoploss,
+            pnl=pnl
         )
-
-        print(f"PNL = {pnl}")
 
         self.position = None
 
-    def save_trade(self, side, symbol, price, qty, pnl=0):
+        return True, pnl
+
+    # ==========================================
+    # AUTO EXIT
+    # ==========================================
+
+    def auto_exit(self, current_price):
+
+        if self.position is None:
+            return None
+
+        if current_price >= self.position["target"]:
+
+            symbol = self.position["symbol"]
+
+            self.sell(current_price)
+
+            update_learning(
+                "AI Combo",
+                symbol,
+                "WIN"
+            )
+
+            return "🎯 Target Hit"
+
+        if current_price <= self.position["stoploss"]:
+
+            symbol = self.position["symbol"]
+
+            self.sell(current_price)
+
+            update_learning(
+                "AI Combo",
+                symbol,
+                "LOSS"
+            )
+
+            return "🛑 Stoploss Hit"
+        
+        return None
+
+    # ==========================================
+    # SAVE TRADE
+    # ==========================================
+
+    def save_trade(
+        self,
+        action,
+        symbol,
+        entry,
+        exit_price,
+        qty,
+        target,
+        stoploss,
+        pnl
+    ):
+
+        file_exists = os.path.exists("trade_history.csv")
 
         with open(
             "trade_history.csv",
             "a",
-            newline=""
+            newline="",
+            encoding="utf-8"
         ) as f:
 
             writer = csv.writer(f)
 
+            if (not file_exists) or os.path.getsize("trade_history.csv") == 0:
+
+                writer.writerow([
+                    "Date",
+                    "Action",
+                    "Symbol",
+                    "Entry",
+                    "Exit",
+                    "Qty",
+                    "Target",
+                    "Stoploss",
+                    "PNL"
+                ])
+
             writer.writerow([
-                datetime.now(),
-                side,
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                action,
                 symbol,
-                price,
+                entry,
+                exit_price,
                 qty,
+                target,
+                stoploss,
                 pnl
             ])
+
+
+# ==========================================
+# CHECK EXIT
+# ==========================================
+
 def check_exit(entry, current):
 
     if current <= entry - 20:

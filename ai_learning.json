@@ -1,0 +1,16 @@
+{
+    "wins": 4,
+    "losses": 4,
+    "strategies": {
+        "AI Combo": {
+            "wins": 4,
+            "losses": 4
+        }
+    },
+    "markets": {
+        "NIFTY": {
+            "wins": 4,
+            "losses": 4
+        }
+    }
+}
