@@ -35,16 +35,30 @@ from ai_engine import (
 
 from ai_learning import auto_strategy
 
+from broker.broker_manager import BrokerManager
+import config
+
 manager = TradeManager()
-
-
 
 def status_ribbon():
 
     c1, c2, c3, c4, c5 = st.columns(5)
 
+    broker = BrokerManager(config.BROKER)
+
+    if config.MODE == "PAPER":
+        broker_status = "🟡 PAPER"
+    else:
+        if broker.broker.connected:
+            broker_status = "🟢 CONNECTED"
+        else:
+            broker_status = "🔴 NOT CONNECTED"
+
     with c1:
-        st.success("🟢 Broker")
+        st.info(
+            f"🏦 {config.BROKER}"
+        )
+        st.caption(broker_status)
 
     with c2:
         st.success("🟢 Market")
@@ -1301,8 +1315,6 @@ def dashboard_page(
         st.button("📥 Export Report")
 
         st.divider()
-
-    st.success("✅ Dashboard Loaded Successfully")
 
     st.caption(
 

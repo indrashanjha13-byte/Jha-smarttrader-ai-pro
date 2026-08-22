@@ -9,19 +9,23 @@ class BrokerManager:
 
     def __init__(self, broker_name):
 
-        if broker_name == "Kotak Neo":
+        name = str(broker_name).strip().upper()
+
+        if name in ("KOTAK NEO", "KOTAK", "KOTAKNEO"):
             self.broker = KotakBroker()
 
-        elif broker_name == "Dhan":
+        elif name == "DHAN":
             self.broker = DhanBroker()
 
-        elif broker_name == "Zerodha":
+        elif name == "ZERODHA":
             self.broker = ZerodhaBroker()
 
-        elif broker_name == "Upstox":
+        elif name == "UPSTOX":
             self.broker = UpstoxBroker()
 
         else:
+            print(f"⚠️ Unknown broker: {broker_name}")
+            print("⚠️ Using DemoBroker")
             self.broker = DemoBroker()
 
     def connect(self):
