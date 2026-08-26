@@ -9,3 +9,5 @@ requests
 reportlab
 streamlit-autorefresh
 python-telegram-bot
+python-decouple
+kotakneoapi
