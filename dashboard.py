@@ -298,8 +298,7 @@ if page == "📈 Market":
         trader,
         INDICES,
         FO_STOCKS,
-        scan_all_option_chain,
-        get_signals
+        scan_all_option_chain
     )
 # =====================================
 # TRADING PAGE
