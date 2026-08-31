@@ -1,76 +1,60 @@
-def ai_filter(
-    rsi,
-    volume
-):
+import logging
+import math
 
-    if rsi > 60 and volume > 100000:
 
+def ai_filter(rsi, volume):
+    if rsi is None or volume is None:
+        return False
+    # Filter allows both strong uptrend (RSI > 60) and downtrend/oversold setup (RSI < 40) with volume confirmation
+    if (rsi > 60 or rsi < 40) and volume > 100000:
         return True
-
     return False
 
-def rank_signal(
-    rsi,
-    volume,
-    trend
-):
 
+def rank_signal(rsi, volume, trend):
     score = 0
-
-    if rsi > 60:
+    if rsi is not None:
+        if rsi > 60 or rsi < 40:
+            score += 30
+    if volume is not None and volume > 100000:
         score += 30
-
-    if volume > 100000:
-        score += 30
-
-    if trend == "UP":
+    if trend in ("UP", "BULLISH", 1):
         score += 40
-
+    elif trend in ("DOWN", "BEARISH", -1):
+        score += 40
     return score
 
-def market_regime(
-    ema9,
-    ema21,
-    supertrend
-):
+
+def market_regime(ema9, ema21, supertrend):
+    if any(v is None for v in [ema9, ema21, supertrend]):
+        return "SIDEWAYS"
 
     if ema9 > ema21 and supertrend > 0:
         return "BULLISH"
-
     elif ema9 < ema21 and supertrend < 0:
         return "BEARISH"
 
     return "SIDEWAYS"
 
-def risk_check(
-    balance,
-    risk_percent,
-    trade_amount
-):
 
-    max_risk = balance * (risk_percent / 100)
+def risk_check(balance, risk_percent, trade_amount):
+    if balance <= 0 or risk_percent <= 0:
+        return False
+    max_risk = balance * (risk_percent / 100.0)
+    return trade_amount <= max_risk
 
-    if trade_amount <= max_risk:
-        return True
 
-    return False
-
-def trade_decision(
-    signal,
-    regime,
-    risk_ok
-):
-
+def trade_decision(signal, regime, risk_ok):
     if not risk_ok:
         return "NO TRADE"
 
     if signal == "BUY" and regime == "BULLISH":
         return "BUY"
-
     elif signal == "SELL" and regime == "BEARISH":
         return "SELL"
 
     return "HOLD"
+
 
 def ai_brain(
     signal,
@@ -84,32 +68,11 @@ def ai_brain(
     risk_percent,
     trade_amount
 ):
-
     filter_ok = ai_filter(rsi, volume)
-
-    score = rank_signal(
-        rsi,
-        volume,
-        trend
-    )
-
-    regime = market_regime(
-        ema9,
-        ema21,
-        supertrend
-    )
-
-    risk_ok = risk_check(
-        balance,
-        risk_percent,
-        trade_amount
-    )
-
-    decision = trade_decision(
-        signal,
-        regime,
-        risk_ok
-    )
+    score = rank_signal(rsi, volume, trend)
+    regime = market_regime(ema9, ema21, supertrend)
+    risk_ok = risk_check(balance, risk_percent, trade_amount)
+    decision = trade_decision(signal, regime, risk_ok)
 
     return {
         "filter": filter_ok,
@@ -119,70 +82,72 @@ def ai_brain(
         "decision": decision
     }
 
-def confidence_score(
-    score,
-    regime,
-    filter_ok
-):
 
-    confidence = score
+def confidence_score(score, regime, filter_ok):
+    confidence = float(score)
 
-    if regime == "BULLISH":
-        confidence += 10
-
-    elif regime == "BEARISH":
-        confidence += 10
+    if regime in ("BULLISH", "BEARISH"):
+        confidence += 10.0
 
     if filter_ok:
-        confidence += 10
+        confidence += 10.0
 
-    if confidence > 100:
-        confidence = 100
+    return min(max(confidence, 0.0), 100.0)
 
-    return confidence
-def stop_target(entry, atr=20):
 
-    stoploss = entry - atr
-    target = entry + (atr * 2)
+def stop_target(entry, atr=20, action="BUY"):
+    entry = float(entry)
+    atr = float(atr) if atr > 0 else 20.0
+
+    if action == "SELL":
+        stoploss = round(entry + atr, 2)
+        target = round(entry - (atr * 2), 2)
+    else:
+        stoploss = round(entry - atr, 2)
+        target = round(entry + (atr * 2), 2)
 
     return stoploss, target
 
 
-def position_size(
-    balance,
-    risk_percent,
-    stoploss_points
-):
+def position_size(balance, risk_percent, stoploss_points):
+    stoploss_points = abs(float(stoploss_points))
+    if stoploss_points <= 0 or balance <= 0:
+        return 1
 
-    risk_amount = balance * (risk_percent / 100)
-
+    risk_amount = balance * (risk_percent / 100.0)
     qty = int(risk_amount / stoploss_points)
 
-    if qty < 1:
-        qty = 1
-
-    return qty
+    return max(qty, 1)
 
 
-def trailing_stop(
-    entry,
-    current_price,
-    stoploss
-):
+def trailing_stop(entry, current_price, stoploss, action="BUY"):
+    entry = float(entry)
+    current_price = float(current_price)
+    stoploss = float(stoploss)
 
-    if current_price >= entry + 20:
-        stoploss = entry
+    if action == "BUY":
+        profit_points = current_price - entry
+        if profit_points >= 80:
+            stoploss = max(stoploss, entry + 60)
+        elif profit_points >= 60:
+            stoploss = max(stoploss, entry + 40)
+        elif profit_points >= 40:
+            stoploss = max(stoploss, entry + 20)
+        elif profit_points >= 20:
+            stoploss = max(stoploss, entry)
+    else:
+        profit_points = entry - current_price
+        if profit_points >= 80:
+            stoploss = min(stoploss, entry - 60)
+        elif profit_points >= 60:
+            stoploss = min(stoploss, entry - 40)
+        elif profit_points >= 40:
+            stoploss = min(stoploss, entry - 20)
+        elif profit_points >= 20:
+            stoploss = min(stoploss, entry)
 
-    if current_price >= entry + 40:
-        stoploss = entry + 20
+    return round(stoploss, 2)
 
-    if current_price >= entry + 60:
-        stoploss = entry + 40
-
-    if current_price >= entry + 80:
-        stoploss = entry + 60
-
-    return stoploss
 
 def daily_risk_manager(
     trades_today,
@@ -192,7 +157,6 @@ def daily_risk_manager(
     max_losses=3,
     max_daily_loss=2000
 ):
-
     if trades_today >= max_trades:
         return False, "Max Trades Reached"
 

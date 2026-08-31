@@ -1,16 +1,21 @@
 {
+    "total_trades": 8,
     "wins": 4,
     "losses": 4,
+    "overall_win_rate": 50.0,
     "strategies": {
         "AI Combo": {
             "wins": 4,
-            "losses": 4
+            "losses": 4,
+            "win_rate": 50.0,
+            "weight_multiplier": 1.0
         }
     },
     "markets": {
         "NIFTY": {
             "wins": 4,
-            "losses": 4
+            "losses": 4,
+            "win_rate": 50.0
         }
     }
 }

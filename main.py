@@ -1,65 +1,65 @@
-from strategy import generate_signal
-from TradingSoftware.ai.ai_signal_ranker import signal_score
-from TradingSoftware.ai.ai_trade_filter import trade_allowed
-from TradingSoftware.ai.ai_model import model
+import logging
 
-from signals import get_signals
+# Standard Project Imports (Safe Paths)
+try:
+    from signals import get_signals
+    from strategy import generate_signal
+    from ai_signal_ranker import signal_score
+    from ai_trade_filter import trade_allowed
+    from paper_trading import PaperTrader
+    from config import MODE
+    from telegram_bot import send_alert
+except ImportError as e:
+    logging.error(f"❌ Import Failure in test_runner: {e}")
 
-data = get_signals("^NSEI")
-print(data)
-if "error" in data:
-    print(data["error"])
-    exit()
 
-signal = generate_signal(
-    data["SUPERTREND"],
-    data["MACD"],
-    data["MACD_SIGNAL"],
-    data["Volume"],
-    data["AVG_VOLUME"],
-)
-print("SIGNAL =", signal)
+def run_trading_pipeline(symbol="^NSEI"):
+    """
+    Executes an end-to-end signal analysis and trade execution pipeline safely.
+    """
+    logging.info(f"🚀 Starting Trading Pipeline for {symbol}...")
 
-print(data)
-from paper_trading import PaperTrader
+    # 1. Fetch Market Data & Signals
+    data = get_signals(symbol)
 
-trader = PaperTrader()
+    if not data or "error" in data:
+        logging.error(f"❌ Signal Retrieval Failed for {symbol}: {data.get('error', 'Unknown Error')}")
+        return False
 
-trader.buy(
-    "BANKNIFTY",
-    500,
-    10
-)
-
-trader.sell(530)
-
-print(
-    "Balance =",
-    trader.balance
-)
-from config import MODE
-
-if MODE == "PAPER":
-
-    print(
-        "Paper Trading Started"
+    # 2. Strategy Signal Generation
+    signal = generate_signal(
+        data.get("SUPERTREND", 0),
+        data.get("MACD", 0),
+        data.get("MACD_SIGNAL", 0),
+        data.get("Volume", 0),
+        data.get("AVG_VOLUME", 0)
     )
+    logging.info(f"📊 Signal Generated for {symbol}: {signal}")
 
-else:
+    # 3. Paper Trader Execution Validation
+    trader = PaperTrader()
 
-    print(
-        "Live Trading Started"
-    )
-    
-from telegram_bot import send_alert
+    if signal == "BUY":
+        current_price = data.get("Close", 25000.0)
+        qty = 15
 
-send_alert(
-    "BUY NIFTY @ 25100"
-) 
+        # Execute Buy Order Safely
+        buy_success = trader.buy(symbol=symbol, price=current_price, qty=qty)
 
-from signals import get_signals
-from strategy import generate_signal
+        if buy_success:
+            logging.info(f"✅ Paper Trade Opened. Balance: ₹{getattr(trader, 'balance', 100000)}")
+            
+            # Send Telegram Alert
+            try:
+                send_alert(f"🟢 BUY SIGNAL: {symbol} @ ₹{current_price} | Qty: {qty}")
+            except Exception as e:
+                logging.error(f"⚠️ Telegram Notification Error: {e}")
 
-symbol = "RELIANCE.NS"
+    # 4. Mode Status Check
+    logging.info(f"🤖 Active System Trading Mode: {MODE}")
+    return True
 
-data = get_signals(symbol)
+
+if __name__ == "__main__":
+    # Test execution for default symbol
+    run_trading_pipeline("^NSEI")

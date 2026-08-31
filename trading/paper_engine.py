@@ -1,44 +1,59 @@
 from datetime import datetime
 import pandas as pd
+import logging
 import os
 
-from ai_learning import update_learning
+try:
+    from ai_learning import update_learning
+except ImportError:
+    def update_learning(strategy, market, result):
+        pass
+
+HISTORY_FILE = "trade_history.csv"
 
 
 class PaperTrading:
 
-    def __init__(self):
-        self.balance = 100000
-        self.position = None
+    def __init__(self, initial_balance=100000.0):
+        self.balance = float(initial_balance)
+        self.positions = {}  # Symbol-wise multiple positions support
         self.trade_history = []
+        self._load_trade_history()
+
+    def _load_trade_history(self):
+        if os.path.exists(HISTORY_FILE):
+            try:
+                df = pd.read_csv(HISTORY_FILE)
+                self.trade_history = df.to_dict("records")
+            except Exception as e:
+                logging.error(f"Failed to load paper trade history: {e}")
 
     # ==========================
-    # BUY
+    # BUY ORDER
     # ==========================
-    def buy(
-        self,
-        symbol,
-        price,
-        qty,
-        target=None,
-        stoploss=None,
-        strategy="AI Combo"
-    ):
+    def buy(self, symbol, price, qty, target=None, stoploss=None, strategy="AI Combo", **kwargs):
+        symbol = str(symbol).upper()
+        price = float(price)
+        qty = int(qty)
 
-        if target is None:
-            target = price + 40
+        if qty <= 0 or price <= 0:
+            return False, "Invalid Quantity or Price"
 
-        if stoploss is None:
-            stoploss = price - 20
+        # Percentage-based fallback target & stoploss if not provided
+        if target is None or target == 0:
+            target = round(price * 1.015, 2)  # 1.5% Target default
+        if stoploss is None or stoploss == 0:
+            stoploss = round(price * 0.992, 2)  # 0.8% Stoploss default
 
         cost = price * qty
 
         if cost > self.balance:
-            return False, "Insufficient Balance"
+            return False, f"Insufficient Balance. Required: ₹{cost:.2f}, Avail: ₹{self.balance:.2f}"
 
         self.balance -= cost
 
-        self.position = {
+        # Store position by Symbol
+        self.positions[symbol] = {
             "symbol": symbol,
             "entry": price,
             "qty": qty,
@@ -57,113 +72,82 @@ class PaperTrading:
             "Qty": qty,
             "Target": target,
             "Stoploss": stoploss,
-            "PNL": 0
+            "PNL": 0.0
         }
 
         self._save_trade(trade)
+        logging.info(f"🟢 PAPER BUY -> {symbol} | Price: ₹{price} | Qty: {qty}")
 
-        return True, "BUY Executed"
+        return True, f"BUY Executed for {symbol}"
 
     # ==========================
-    # SELL
+    # SELL ORDER
     # ==========================
-    def sell(self, price):
+    def sell(self, symbol, price):
+        symbol = str(symbol).upper()
 
-        if self.position is None:
-            return False, "No Position"
+        if symbol not in self.positions:
+            return False, f"No Open Position for {symbol}"
 
-        pnl = round(
-            (price - self.position["entry"])
-            * self.position["qty"],
-            2
-        )
+        pos = self.positions[symbol]
+        price = float(price)
+        pnl = round((price - pos["entry"]) * pos["qty"], 2)
 
-        self.balance += price * self.position["qty"]
+        self.balance += price * pos["qty"]
 
-        # ==========================
-        # AI LEARNING
-        # ==========================
-        if pnl > 0:
-            result = "WIN"
-        else:
-            result = "LOSS"
+        # AI Learning Trigger
+        result = "WIN" if pnl > 0 else "LOSS"
+        strategy = pos.get("strategy", "AI Combo")
 
-        strategy = self.position.get(
-            "strategy",
-            "AI Combo"
-        )
-
-        market = self.position["symbol"]
-
-        update_learning(
-            strategy,
-            market,
-            result
-        )
+        try:
+            update_learning(strategy, symbol, result)
+        except Exception as e:
+            logging.error(f"AI Learning Update error: {e}")
 
         trade = {
             "Date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "Action": "SELL",
-            "Symbol": market,
-            "Entry": self.position["entry"],
+            "Symbol": symbol,
+            "Entry": pos["entry"],
             "Exit": price,
-            "Qty": self.position["qty"],
-            "Target": self.position["target"],
-            "Stoploss": self.position["stoploss"],
+            "Qty": pos["qty"],
+            "Target": pos["target"],
+            "Stoploss": pos["stoploss"],
             "PNL": pnl
         }
 
         self._save_trade(trade)
+        del self.positions[symbol]
 
-        self.position = None
-
+        logging.info(f"🔴 PAPER SELL -> {symbol} | Exit: ₹{price} | PNL: ₹{pnl}")
         return True, pnl
 
     # ==========================
-    # AUTO EXIT
+    # AUTO EXIT CHECK
     # ==========================
-    def auto_exit(self, current_price):
-
-        if self.position is None:
+    def auto_exit(self, symbol, current_price):
+        symbol = str(symbol).upper()
+        if symbol not in self.positions:
             return None
 
-        if current_price >= self.position["target"]:
-            self.sell(current_price)
+        pos = self.positions[symbol]
+        if current_price >= pos["target"]:
+            self.sell(symbol, current_price)
             return "TARGET HIT"
 
-        if current_price <= self.position["stoploss"]:
-            self.sell(current_price)
+        if current_price <= pos["stoploss"]:
+            self.sell(symbol, current_price)
             return "STOPLOSS HIT"
 
         return None
 
     # ==========================
-    # SAVE TRADE
+    # SAVE TRADE HISTORY
     # ==========================
     def _save_trade(self, trade):
-
-        file = "trade_history.csv"
-
-        if os.path.exists(file):
-            df = pd.read_csv(file)
-        else:
-            df = pd.DataFrame(columns=[
-                "Date",
-                "Action",
-                "Symbol",
-                "Entry",
-                "Exit",
-                "Qty",
-                "Target",
-                "Stoploss",
-                "PNL"
-            ])
-
-        df = pd.concat(
-            [df, pd.DataFrame([trade])],
-            ignore_index=True
-        )
-
-        df.to_csv(file, index=False)
-
         self.trade_history.append(trade)
+        try:
+            df = pd.DataFrame(self.trade_history)
+            df.to_csv(HISTORY_FILE, index=False)
+        except Exception as e:
+            logging.error(f"Error saving trade history CSV: {e}")

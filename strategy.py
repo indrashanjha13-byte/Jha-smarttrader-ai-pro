@@ -1,147 +1,161 @@
-def generate_signal(
-    supertrend,
-    macd,
-    macd_signal,
-    volume,
-    avg_volume
-):
+import pandas as pd
+import logging
 
-    # BUY
-    if (
-        supertrend > 0
-        and macd > macd_signal
-        and volume > avg_volume
-    ):
-        return "BUY"
 
-    # SELL
-    elif (
-        supertrend < 0
-        and macd < macd_signal
-        and volume > avg_volume
-    ):
-        return "SELL"
+def generate_signal(supertrend, macd, macd_signal, volume, avg_volume):
+    """Combines SuperTrend, MACD and Volume confirmation for primary signal."""
+    try:
+        st = int(supertrend or 0)
+        m_val = float(macd or 0)
+        m_sig = float(macd_signal or 0)
+        vol = float(volume or 0)
+        avg_vol = float(avg_volume or 0)
 
+        if st > 0 and m_val > m_sig and vol > avg_vol:
+            return "BUY"
+        elif st < 0 and m_val < m_sig and vol > avg_vol:
+            return "SELL"
+    except Exception as e:
+        logging.error(f"❌ Error in generate_signal: {e}")
+    
     return "NO TRADE"
 
 
 def ema_signal(ema9, ema21):
-
-    if ema9 > ema21:
-        return "BUY"
-
-    elif ema9 < ema21:
-        return "SELL"
-
+    """Determines trend direction using EMA crossover/position."""
+    try:
+        e9 = float(ema9 or 0)
+        e21 = float(ema21 or 0)
+        if e9 > e21:
+            return "BUY"
+        elif e9 < e21:
+            return "SELL"
+    except Exception as e:
+        logging.error(f"❌ Error in ema_signal: {e}")
+    
     return "NO TRADE"
 
 
 def rsi_signal(rsi):
-
-    if rsi < 30:
-        return "BUY"
-
-    elif rsi > 70:
-        return "SELL"
-
+    """Checks overbought/oversold levels using RSI."""
+    try:
+        r = float(rsi or 0)
+        if r < 30:
+            return "BUY"
+        elif r > 70:
+            return "SELL"
+    except Exception as e:
+        logging.error(f"❌ Error in rsi_signal: {e}")
+    
     return "NO TRADE"
 
 
 def supertrend_signal(supertrend):
-
-    if supertrend > 0:
-        return "BUY"
-
-    elif supertrend < 0:
-        return "SELL"
-
+    """Returns signal based on SuperTrend direction."""
+    try:
+        st = int(supertrend or 0)
+        if st > 0:
+            return "BUY"
+        elif st < 0:
+            return "SELL"
+    except Exception as e:
+        logging.error(f"❌ Error in supertrend_signal: {e}")
+    
     return "NO TRADE"
 
-def option_selection(signal, strike_mode):
 
+def option_selection(signal, strike_mode):
+    """Maps trade signal and strike preference (ITM/ATM/OTM) to option strategy."""
     if signal == "BUY":
-        if strike_mode == "ITM":
+        mode = str(strike_mode).upper()
+        if mode == "ITM":
             return "Buy ITM Option"
-        elif strike_mode == "ATM":
+        elif mode == "ATM":
             return "Buy ATM Option"
         else:
             return "Buy OTM Option"
-
     return "No Trade"
-
-import pandas as pd
 
 
 def scalper_signal(df):
+    """
+    Advanced price-action and indicator scalper strategy 
+    using EMA trends, RSI filter and candle confirmation.
+    """
+    try:
+        if df is None or len(df) < 20:
+            return {"signal": "WAIT", "entry": None, "stop_loss": None, "target": None}
 
-    df = df.copy()
+        df = df.copy()
+        
+        # Standardize column names to lowercase to prevent KeyErrors
+        df.columns = [str(c).lower() for c in df.columns]
 
-    # EMA
-    df["ema9"] = df["close"].ewm(span=9).mean()
-    df["ema21"] = df["close"].ewm(span=21).mean()
+        if "close" not in df.columns or "open" not in df.columns or "low" not in df.columns or "high" not in df.columns:
+            return {"signal": "WAIT", "entry": None, "stop_loss": None, "target": None}
 
-    # RSI
-    delta = df["close"].diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
+        # Calculate EMA safely
+        df["ema9"] = df["close"].ewm(span=9, adjust=False).mean()
+        df["ema21"] = df["close"].ewm(span=21, adjust=False).mean()
 
-    avg_gain = gain.rolling(14).mean()
-    avg_loss = loss.rolling(14).mean()
+        # Calculate RSI manually if not present
+        delta = df["close"].diff()
+        gain = delta.clip(lower=0)
+        loss = -delta.clip(upper=0)
+        avg_gain = gain.rolling(14).mean()
+        avg_loss = loss.rolling(14).mean()
+        
+        rs = avg_gain / avg_loss.replace(0, 0.001)  # Division by zero safeguard
+        df["rsi"] = 100 - (100 / (1 + rs))
 
-    rs = avg_gain / avg_loss
-    df["rsi"] = 100 - (100 / (1 + rs))
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
 
+        signal = "WAIT"
+        entry = None
+        sl = None
+        target = None
 
-    last = df.iloc[-1]
-    prev = df.iloc[-2]
+        # Bullish setup
+        if (
+            last["ema9"] > last["ema21"]
+            and last["rsi"] > 50
+            and last["close"] > last["open"]
+            and prev["close"] < prev["open"]
+        ):
+            signal = "BUY"
+            entry = float(last["close"])
+            sl = float(last["low"])
+            risk = entry - sl
+            if risk > 0:
+                target = entry + (risk * 1.5)
+            else:
+                target = entry * 1.01
 
+        # Bearish setup
+        elif (
+            last["ema9"] < last["ema21"]
+            and last["rsi"] < 50
+            and last["close"] < last["open"]
+            and prev["close"] > prev["open"]
+        ):
+            signal = "SELL"
+            entry = float(last["close"])
+            sl = float(last["high"])
+            risk = sl - entry
+            if risk > 0:
+                target = entry - (risk * 1.5)
+            else:
+                target = entry * 0.99
 
-    signal = "WAIT"
-    entry = None
-    sl = None
-    target = None
+        return {
+            "signal": signal,
+            "entry": round(entry, 2) if entry else None,
+            "stop_loss": round(sl, 2) if sl else None,
+            "target": round(target, 2) if target else None
+        }
 
-
-    # Bullish candle + trend
-
-    if (
-        last["ema9"] > last["ema21"]
-        and last["rsi"] > 50
-        and last["close"] > last["open"]
-        and prev["close"] < prev["open"]
-    ):
-
-        signal = "BUY"
-
-        entry = last["close"]
-        sl = last["low"]
-
-        risk = entry - sl
-        target = entry + (risk * 1.5)
-
-
-
-    # Bearish candle + trend
-
-    elif (
-        last["ema9"] < last["ema21"]
-        and last["rsi"] < 50
-        and last["close"] < last["open"]
-        and prev["close"] > prev["open"]
-    ):
-
-        signal = "SELL"
-
-        entry = last["close"]
-        sl = last["high"]
-
-        risk = sl - entry
-        target = entry - (risk * 1.5)
-
-
-    return {
-        "signal": signal,
-        "entry": round(entry,2) if entry else None,
-        "stop_loss": round(sl,2) if sl else None,
-        "target": round(target,2) if target else None
-    }
+    except Exception as e:
+        logging.error(f"❌ Error in scalper_signal: {e}")
+        return {"signal": "WAIT", "entry": None, "stop_loss": None, "target": None}
+    

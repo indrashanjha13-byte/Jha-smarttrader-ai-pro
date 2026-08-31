@@ -5,13 +5,22 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 import tempfile
 
+# Helper function to normalize DataFrame columns safely
+def normalize_history(df):
+    if df.empty:
+        return df
+    if "PnL" in df.columns and "PNL" not in df.columns:
+        df = df.rename(columns={"PnL": "PNL"})
+    if "PNL" in df.columns:
+        df["PNL"] = pd.to_numeric(df["PNL"], errors="coerce").fillna(0)
+    return df
+
 
 # ===================================
 # PDF Export
 # ===================================
 
 def export_pdf(history):
-
     pdf_file = tempfile.NamedTemporaryFile(
         delete=False,
         suffix=".pdf"
@@ -23,32 +32,24 @@ def export_pdf(history):
     )
 
     c.setFont("Helvetica-Bold", 16)
-    c.drawString(
-        50,
-        780,
-        "Jha SmartTrader AI Pro Report"
-    )
+    c.drawString(50, 780, "Jha SmartTrader AI Pro Report")
 
     y = 740
 
     for _, row in history.iterrows():
-
         c.setFont("Helvetica", 10)
 
-        text = (
-            f"{row['Date']} | "
-            f"{row['Symbol']} | "
-            f"{row['Action']} | "
-            f"Entry : {row['Entry']} | "
-            f"Exit : {row['Exit']} | "
-            f"PNL : {row['PNL']}"
-        )
+        # Convert all fields to str explicitly to prevent ReportLab crashes
+        date_str = str(row.get("Date", "-"))[:10]
+        sym_str = str(row.get("Symbol", "-"))
+        act_str = str(row.get("Action", "-"))
+        entry_str = str(row.get("Entry", 0))
+        exit_str = str(row.get("Exit", 0))
+        pnl_str = str(row.get("PNL", 0))
 
-        c.drawString(
-            40,
-            y,
-            text
-        )
+        text = f"{date_str} | {sym_str} | {act_str} | Entry : {entry_str} | Exit : {exit_str} | PNL : {pnl_str}"
+
+        c.drawString(40, y, text)
 
         y -= 18
 
@@ -66,31 +67,29 @@ def export_pdf(history):
 # ===================================
 
 def reports_page():
-
     st.title("📄 Reports")
-
     st.info("Trading Reports")
 
     try:
-
         history = pd.read_csv("trade_history.csv")
+        history = normalize_history(history)
 
-        history["Date"] = pd.to_datetime(
-            history["Date"],
-            errors="coerce"
-        )
+        if history.empty:
+            st.warning("⚠️ No Trade History Available Yet.")
+            return
+
+        date_col = "Date" if "Date" in history.columns else ("Time" if "Time" in history.columns else None)
+        if date_col:
+            history["ParsedDate"] = pd.to_datetime(history[date_col], errors="coerce")
+        else:
+            history["ParsedDate"] = pd.Timestamp.now()
 
         # ===================================
         # Trade History
         # ===================================
 
         st.subheader("📜 Trade History")
-
-        st.dataframe(
-            history,
-            use_container_width=True
-        )
-
+        st.dataframe(history, use_container_width=True)
         st.divider()
 
         # ===================================
@@ -98,32 +97,21 @@ def reports_page():
         # ===================================
 
         total = len(history)
-
         win = len(history[history["PNL"] > 0])
-
         loss = len(history[history["PNL"] < 0])
+        net = float(history["PNL"].sum())
 
-        net = history["PNL"].sum()
-
-        win_rate = (
-            round((win / total) * 100, 2)
-            if total > 0
-            else 0
-        )
+        win_rate = round((win / total) * 100, 2) if total > 0 else 0.0
 
         st.subheader("📊 Performance Summary")
 
         c1, c2, c3, c4 = st.columns(4)
-
         c1.metric("Trades", total)
         c2.metric("Winning", win)
         c3.metric("Losing", loss)
         c4.metric("Win %", f"{win_rate}%")
 
-        st.metric(
-            "Net Profit",
-            f"₹ {net:.2f}"
-        )
+        st.metric("Net Profit", f"₹ {net:.2f}")
 
         st.divider()
 
@@ -133,35 +121,19 @@ def reports_page():
 
         st.subheader("📅 Monthly P&L")
 
+        history["MonthStr"] = history["ParsedDate"].dt.strftime("%Y-%m").fillna("Unknown")
+
         monthly = (
-            history.groupby(
-                history["Date"].dt.strftime("%Y-%m")
-            )["PNL"]
+            history.groupby("MonthStr")["PNL"]
             .sum()
             .reset_index()
         )
+        monthly.columns = ["Month", "PNL"]
 
-        monthly.columns = [
-            "Month",
-            "PNL"
-        ]
+        st.dataframe(monthly, use_container_width=True)
 
-        st.dataframe(
-            monthly,
-            use_container_width=True
-        )
-
-        fig = px.bar(
-            monthly,
-            x="Month",
-            y="PNL",
-            title="Monthly Profit / Loss"
-        )
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
+        fig = px.bar(monthly, x="Month", y="PNL", title="Monthly Profit / Loss")
+        st.plotly_chart(fig, use_container_width=True)
 
         st.divider()
 
@@ -175,16 +147,12 @@ def reports_page():
 
         fig = px.line(
             history,
-            x="Date",
+            x="ParsedDate",
             y="Equity",
             title="Account Equity Curve",
             markers=True
         )
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
+        st.plotly_chart(fig, use_container_width=True)
 
         st.divider()
 
@@ -202,15 +170,15 @@ def reports_page():
         with col1:
             st.success("🏆 Best Trade")
             st.metric(
-                best["Symbol"],
-                f"₹ {best['PNL']:.2f}"
+                str(best.get("Symbol", "N/A")),
+                f"₹ {best.get('PNL', 0):.2f}"
             )
 
         with col2:
             st.error("💀 Worst Trade")
             st.metric(
-                worst["Symbol"],
-                f"₹ {worst['PNL']:.2f}"
+                str(worst.get("Symbol", "N/A")),
+                f"₹ {worst.get('PNL', 0):.2f}"
             )
 
         st.divider()
@@ -224,9 +192,7 @@ def reports_page():
         col1, col2 = st.columns(2)
 
         with col1:
-
             csv = history.to_csv(index=False).encode("utf-8")
-
             st.download_button(
                 label="⬇ Download CSV",
                 data=csv,
@@ -235,17 +201,17 @@ def reports_page():
             )
 
         with col2:
-
-            pdf_path = export_pdf(history)
-
-            with open(pdf_path, "rb") as pdf:
-
-                st.download_button(
-                    label="📄 Download PDF",
-                    data=pdf,
-                    file_name="SmartTrader_Report.pdf",
-                    mime="application/pdf"
-                )
+            try:
+                pdf_path = export_pdf(history)
+                with open(pdf_path, "rb") as pdf:
+                    st.download_button(
+                        label="📄 Download PDF",
+                        data=pdf,
+                        file_name="SmartTrader_Report.pdf",
+                        mime="application/pdf"
+                    )
+            except Exception as pdf_err:
+                st.error(f"Could not generate PDF: {pdf_err}")
 
         st.divider()
 
@@ -255,8 +221,8 @@ def reports_page():
 
         st.subheader("🤖 AI Performance Report")
 
-        accuracy = round((win / total) * 100, 2) if total > 0 else 0
-        risk = round((loss / total) * 100, 2) if total > 0 else 0
+        accuracy = round((win / total) * 100, 2) if total > 0 else 0.0
+        risk = round((loss / total) * 100, 2) if total > 0 else 0.0
 
         if accuracy >= 80:
             rating = "⭐⭐⭐⭐⭐ Excellent"
@@ -270,12 +236,11 @@ def reports_page():
             rating = "⭐ Needs Improvement"
 
         c1, c2, c3 = st.columns(3)
-
         c1.metric("AI Accuracy", f"{accuracy}%")
         c2.metric("Risk Score", f"{risk}%")
         c3.metric("Strategy Rating", rating)
 
-        st.progress(accuracy / 100)
+        st.progress(min(max(accuracy / 100, 0.0), 1.0))
 
         st.divider()
 
@@ -297,11 +262,8 @@ def reports_page():
             hole=0.45,
             title="Winning vs Losing Trades"
         )
+        st.plotly_chart(fig, use_container_width=True)
 
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
         st.divider()
 
         # ===================================
@@ -310,14 +272,13 @@ def reports_page():
 
         st.subheader("📆 Daily P&L")
 
+        history["DateStr"] = history["ParsedDate"].dt.strftime("%Y-%m-%d").fillna("Unknown")
+
         daily = (
-            history.groupby(
-                history["Date"].dt.strftime("%Y-%m-%d")
-            )["PNL"]
+            history.groupby("DateStr")["PNL"]
             .sum()
             .reset_index()
         )
-
         daily.columns = ["Date", "PNL"]
 
         fig = px.line(
@@ -327,11 +288,7 @@ def reports_page():
             markers=True,
             title="Daily Profit / Loss"
         )
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
+        st.plotly_chart(fig, use_container_width=True)
 
         st.divider()
 
@@ -341,38 +298,19 @@ def reports_page():
 
         st.subheader("📊 Advanced Trade Statistics")
 
-        avg_win = round(
-            history[history["PNL"] > 0]["PNL"].mean(),
-            2
-        ) if win > 0 else 0
+        winning_pnls = history[history["PNL"] > 0]["PNL"]
+        losing_pnls = history[history["PNL"] < 0]["PNL"]
 
-        avg_loss = round(
-            history[history["PNL"] < 0]["PNL"].mean(),
-            2
-        ) if loss > 0 else 0
+        avg_win = round(winning_pnls.mean(), 2) if not winning_pnls.empty else 0.0
+        avg_loss = round(losing_pnls.mean(), 2) if not losing_pnls.empty else 0.0
 
-        profit_factor = round(
-            history[history["PNL"] > 0]["PNL"].sum() /
-            abs(history[history["PNL"] < 0]["PNL"].sum()),
-            2
-        ) if loss > 0 else 0
+        total_loss_abs = abs(losing_pnls.sum())
+        profit_factor = round(winning_pnls.sum() / total_loss_abs, 2) if total_loss_abs > 0 else (round(winning_pnls.sum(), 2) if winning_pnls.sum() > 0 else 0.0)
 
         c1, c2, c3 = st.columns(3)
-
-        c1.metric(
-            "💰 Avg Winning Trade",
-            f"₹ {avg_win:.2f}"
-        )
-
-        c2.metric(
-            "📉 Avg Losing Trade",
-            f"₹ {avg_loss:.2f}"
-        )
-
-        c3.metric(
-            "⚡ Profit Factor",
-            profit_factor
-        )
+        c1.metric("💰 Avg Winning Trade", f"₹ {avg_win:.2f}")
+        c2.metric("📉 Avg Losing Trade", f"₹ {avg_loss:.2f}")
+        c3.metric("⚡ Profit Factor", profit_factor)
 
         st.divider()
 
@@ -383,28 +321,18 @@ def reports_page():
         st.subheader("📉 Max Drawdown")
 
         equity = history["PNL"].cumsum()
-
         running_max = equity.cummax()
-
         drawdown = equity - running_max
+        max_drawdown = round(drawdown.min(), 2) if not drawdown.empty else 0.0
 
-        max_drawdown = round(drawdown.min(), 2)
-
-        st.metric(
-            "Maximum Drawdown",
-            f"₹ {max_drawdown}"
-        )
+        st.metric("Maximum Drawdown", f"₹ {max_drawdown}")
 
         fig = px.area(
-            x=history["Date"],
+            x=history["ParsedDate"],
             y=drawdown,
             title="Drawdown Curve"
         )
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
+        st.plotly_chart(fig, use_container_width=True)
 
         st.divider()
 
@@ -419,37 +347,23 @@ def reports_page():
         max_loss = 0
 
         for pnl in history["PNL"]:
-
             if pnl > 0:
-
                 if streak >= 0:
                     streak += 1
                 else:
                     streak = 1
-
                 max_win = max(max_win, streak)
 
             elif pnl < 0:
-
                 if streak <= 0:
                     streak -= 1
                 else:
                     streak = -1
-
                 max_loss = min(max_loss, streak)
 
         col1, col2 = st.columns(2)
-
-        col1.metric(
-            "🔥 Longest Winning Streak",
-            max_win
-        )
-
-        col2.metric(
-            "💀 Longest Losing Streak",
-            abs(max_loss)
-        )
+        col1.metric("🔥 Longest Winning Streak", max_win)
+        col2.metric("💀 Longest Losing Streak", abs(max_loss))
 
     except Exception as e:
-
         st.error(f"❌ Error Loading Reports : {e}")
