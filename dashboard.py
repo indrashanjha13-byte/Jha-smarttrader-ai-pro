@@ -2,6 +2,7 @@ from pathlib import Path
 from datetime import datetime
 import streamlit as st
 import pandas as pd
+import os
 import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -266,59 +267,3 @@ elif page == "⚙ Settings":
 st.divider()
 st.success("✅ Jha SmartTrader AI Pro Loaded Successfully")
 st.caption(f"Last Refresh : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-import streamlit as st
-import pandas as pd
-import os
-
-def show_dashboard():
-    st.subheader("📊 AI SmartTrader - Trading Dashboard & Analytics")
-    
-    csv_file = "trade_history.csv"
-    
-    if not os.path.exists(csv_file):
-        st.warning(f"⚠️ Trade history file '{csv_file}' not found. No active trades logged yet.")
-        return
-
-    try:
-        # Load CSV data
-        df = pd.read_csv(csv_file)
-        
-        if df.empty:
-            st.info("ℹ️ No trades recorded in history.")
-            return
-
-        # Clean column names (strip any accidental whitespace)
-        df.columns = [c.strip() for c in df.columns]
-
-        # Metric Cards Calculation
-        total_trades = len(df)
-        
-        # Check if 'Result' or 'Status' column exists for wins/open count
-        result_col = "Result" if "Result" in df.columns else ("Status" if "Status" in df.columns else None)
-        
-        open_trades = 0
-        win_trades = 0
-        if result_col:
-            open_trades = len(df[df[result_col].astype(str).str.upper() == "OPEN"])
-            win_trades = len(df[df[result_col].astype(str).str.upper() == "WIN"])
-
-        # Display Top Summary Metrics
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Total Trades", total_trades)
-        col2.metric("Open Positions", open_trades)
-        col3.metric("Winning Trades", win_trades)
-        
-        win_rate = round((win_trades / total_trades) * 100, 2) if total_trades > 0 else 0.0
-        col4.metric("Win Rate", f"{win_rate}%")
-
-        st.markdown("---")
-        
-        # Interactive Dataframe View
-        st.markdown("### 📋 Complete Trade Logs")
-        st.dataframe(df, use_container_width=True)
-
-    except Exception as e:
-        st.error(f"❌ Error loading dashboard analytics: {e}")
-
-if __name__ == "__main__":
-    show_dashboard()  
