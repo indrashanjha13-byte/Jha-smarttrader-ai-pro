@@ -18,7 +18,6 @@ from trade_exit import exit_manager
 from broker.broker_manager import BrokerManager
 import config
 
-manager = TradeManager()
 
 def status_ribbon():
     c1, c2, c3, c4, c5 = st.columns(5)
@@ -106,6 +105,7 @@ def performance_report():
     st.plotly_chart(fig, use_container_width=True)
 
 def dashboard_page(trader, current_price, symbol):
+    manager = TradeManager(paper_trader=trader)
     st.title("📈 Jha SmartTrader AI Pro")
     status_ribbon()
     st.caption("AI Powered Intraday Trading Dashboard")
@@ -221,7 +221,12 @@ def dashboard_page(trader, current_price, symbol):
                     decision, confidence = ai["decision"], ai["confidence"]
                     
                     # Process trade using safe quantity
-                    manager.process(stock, decision, c_price, calc_qty)
+                    result, message = manager.process(
+                        symbol=stock,
+                        signal=decision,
+                        current_price=c_price,
+                        capital=trader.balance
+                    )
 
                     signal_icon = "🟢 BUY" if decision == "BUY" else ("🔴 SELL" if decision == "SELL" else "🟡 HOLD")
                     trend = "📈 Bullish" if signal["EMA9"] > signal["EMA21"] else ("📉 Bearish" if signal["EMA9"] < signal["EMA21"] else "➡ Sideways")
@@ -248,8 +253,8 @@ def dashboard_page(trader, current_price, symbol):
 
     # Option Chain AI
     st.subheader("📊 Option Chain AI")
-    try:
-        option = get_option_chain_summary()
+    try: 
+        option = get_option_chain_summary(symbol)
         if "error" not in option:
             ai_opt = option_ai_signal(option["PCR"])
             c1, c2, c3 = st.columns(3)

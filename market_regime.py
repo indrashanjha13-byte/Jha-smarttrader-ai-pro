@@ -1,37 +1,115 @@
-import pandas as pd
-import numpy as np
 import logging
+import math
 
 
-def create_features(df):
+def _safe_float(value, default=0.0):
+    """Safely convert value to float."""
+    try:
+        if value is None:
+            return default
+
+        value = float(value)
+
+        if math.isnan(value) or math.isinf(value):
+            return default
+
+        return value
+
+    except (TypeError, ValueError):
+        return default
+
+
+def market_regime(
+    ema9,
+    ema21,
+    supertrend_direction
+):
     """
-    Safely creates normalized ML features without mutating original DataFrame or producing NaNs.
+    Determines current market regime.
+
+    Returns:
+        BULLISH
+        BEARISH
+        SIDEWAYS
     """
-    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
-        logging.warning("⚠️ Invalid or empty DataFrame passed to create_features.")
-        return pd.DataFrame()
 
-    required_cols = ["EMA20", "EMA50", "RSI", "Volume"]
-    missing_cols = [col for col in required_cols if col not in df.columns]
+    ema9 = _safe_float(ema9)
+    ema21 = _safe_float(ema21)
 
-    if missing_cols:
-        logging.error(f"❌ Missing required columns for feature creation: {missing_cols}")
-        return df
+    # Normalize SuperTrend direction
+    st = str(supertrend_direction).upper().strip()
 
-    # Create safe copy to prevent side effects on original DataFrame
-    df_feat = df.copy()
+    bullish_st = st in (
+        "UP",
+        "BULLISH",
+        "BUY",
+        "1",
+        "1.0"
+    )
 
-    # Core Indicator Features
-    df_feat["EMA_DIFF"] = df_feat["EMA20"] - df_feat["EMA50"]
-    df_feat["RSI_NORM"] = df_feat["RSI"] / 100.0
+    bearish_st = st in (
+        "DOWN",
+        "BEARISH",
+        "SELL",
+        "-1",
+        "-1.0"
+    )
 
-    # Volume Ratio with zero division protection
-    vol_ma20 = df_feat["Volume"].rolling(20, min_periods=1).mean()
-    df_feat["VOL_RATIO"] = np.where(vol_ma20 > 0, df_feat["Volume"] / vol_ma20, 1.0)
+    # Bullish market
+    if ema9 > ema21 and bullish_st:
+        return "BULLISH"
 
-    # Clean NaNs
-    df_feat["EMA_DIFF"] = df_feat["EMA_DIFF"].fillna(0.0)
-    df_feat["RSI_NORM"] = df_feat["RSI_NORM"].fillna(0.5)
-    df_feat["VOL_RATIO"] = df_feat["VOL_RATIO"].fillna(1.0)
+    # Bearish market
+    if ema9 < ema21 and bearish_st:
+        return "BEARISH"
 
-    return df_feat
+    # No clear trend
+    return "SIDEWAYS"
+
+
+def get_market_regime(
+    ema9,
+    ema21,
+    supertrend_direction
+):
+    """
+    Alias for market_regime().
+    Keeps compatibility with modules that use get_market_regime().
+    """
+    return market_regime(
+        ema9,
+        ema21,
+        supertrend_direction
+    )
+
+
+if __name__ == "__main__":
+
+    print("===== MARKET REGIME TEST =====")
+
+    print(
+        "Bullish:",
+        market_regime(
+            ema9=52000,
+            ema21=51800,
+            supertrend_direction="UP"
+        )
+    )
+
+    print(
+        "Bearish:",
+        market_regime(
+            ema9=51800,
+            ema21=52000,
+            supertrend_direction="DOWN"
+        )
+    )
+
+    print(
+        "Sideways:",
+        market_regime(
+            ema9=52000,
+            ema21=51800,
+            supertrend_direction="DOWN"
+        )
+    )

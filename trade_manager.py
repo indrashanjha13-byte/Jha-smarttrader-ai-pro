@@ -1,72 +1,145 @@
 import logging
-from trade_exit import exit_manager
+
 from ai_learning import auto_strategy
 from risk_manager import calculate_trade_details
-from config import LOT_SIZE
-
-
-def place_trade(action, symbol, qty, price):
-    """
-    Executes a trade order (BUY/SELL) locally within trade_manager.
-    """
-    try:
-        logging.info(f"🚀 Placing Trade -> Action: {action} | Symbol: {symbol} | Qty: {qty} | Price: {price}")
-        print(f"🚀 Order Executed: {action} {symbol} (Qty: {qty}) at ₹{price}")
-        return True
-    except Exception as e:
-        logging.error(f"❌ Error in place_trade: {e}")
-        return False
+from config import LOT_SIZE, MODE
 
 
 class TradeManager:
     """
-    Manages trade signals, risk calculations, strategy selection, 
-    and orchestrates order execution and position lifecycle.
+    Central trade execution manager.
+
+    PAPER mode:
+        Uses the supplied PaperTrader only.
+
+    LIVE mode:
+        Blocked for now for safety.
+        Broker integration will be added after Paper Trading testing.
     """
 
-    def __init__(self):
+    def __init__(self, paper_trader=None):
+        self.paper_trader = paper_trader
         self.last_signal = None
+
+    # =========================================================
+    # Set Paper Trader
+    # =========================================================
+
+    def set_paper_trader(self, paper_trader):
+        self.paper_trader = paper_trader
+
+    # =========================================================
+    # Process Signal
+    # =========================================================
 
     def process(
         self,
         symbol,
         signal,
         current_price,
-        capital=100000
+        capital
     ):
         try:
-            signal = str(signal).strip().upper()
             symbol = str(symbol).strip().upper()
+            signal = str(signal).strip().upper()
             current_price = float(current_price)
+            capital = float(capital)
 
-            # ==========================
+            if current_price <= 0:
+                return False, "Invalid price"
+
+            if capital <= 0:
+                return False, "Invalid capital"
+
+            # -------------------------------------------------
             # HOLD
-            # ==========================
+            # -------------------------------------------------
+
             if signal == "HOLD":
-                return
+                return False, "HOLD"
 
-            # ==========================
-            # Same Signal Filtering
-            # ==========================
+            # -------------------------------------------------
+            # Duplicate signal protection
+            # -------------------------------------------------
+
             if signal == self.last_signal:
-                return
+                return False, "Duplicate signal ignored"
 
-            # ==========================
-            # BUY SIGNAL
-            # ==========================
+            # -------------------------------------------------
+            # PAPER MODE ONLY
+            # -------------------------------------------------
+
+            if MODE != "PAPER":
+                logging.warning(
+                    "LIVE mode requested, but live execution is "
+                    "disabled in this Phase."
+                )
+
+                return False, (
+                    "🔒 LIVE trading is currently locked. "
+                    "Use PAPER mode for testing."
+                )
+
+            if self.paper_trader is None:
+                return False, "PaperTrader is not connected"
+
+            # -------------------------------------------------
+            # Existing position check
+            # -------------------------------------------------
+
+            if self.paper_trader.position is not None:
+
+                existing = self.paper_trader.position
+
+                # If opposite signal comes, close existing position.
+                existing_side = existing.get("side", "BUY")
+
+                if (
+                    signal == "BUY"
+                    and existing_side == "SELL"
+                ) or (
+                    signal == "SELL"
+                    and existing_side == "BUY"
+                ):
+
+                    success, result = self.paper_trader.sell(
+                        current_price
+                    )
+
+                    if success:
+                        self.last_signal = signal
+
+                        return True, (
+                            f"🔄 Existing position closed: "
+                            f"PnL ₹{result}"
+                        )
+
+                    return False, str(result)
+
+                return False, "Position already open"
+
+            # -------------------------------------------------
+            # BUY / SELL Risk Calculation
+            # -------------------------------------------------
+
+            selected_strategy = "AI Combo"
+
+            try:
+                selected_strategy = auto_strategy() or "AI Combo"
+            except Exception:
+                pass
+
+            # BUY:
+            # 1% stop loss
+            # 1:2 reward:risk
+
             if signal == "BUY":
-                # Check if trade is already running
-                if exit_manager.trade_open:
-                    logging.warning("⚠️ Trade Already Running. Skipping BUY signal.")
-                    return
 
-                # AI selects the strategy
-                selected_strategy = auto_strategy()
+                stoploss_price = round(
+                    current_price * 0.99,
+                    2
+                )
 
-                # Stop Loss = 1% | Reward : Risk = 1 : 2
-                stoploss_price = round(current_price * 0.99, 2)
-
-                # Risk + Lot Calculation
                 trade = calculate_trade_details(
                     capital=capital,
                     entry_price=current_price,
@@ -75,60 +148,131 @@ class TradeManager:
                     reward_ratio=2.0
                 )
 
-                lots = trade.get("lots", 0)
-                qty = trade.get("quantity", 0)
-                target_price = trade.get("target_price", 0)
-
-                # Safety Check
-                if lots <= 0 or qty <= 0:
-                    logging.warning("⚠️ Trade skipped: Risk limit does not allow even 1 lot.")
-                    return
-
-                # Execute BUY order via Broker/Paper API
-                place_trade("BUY", symbol, qty, current_price)
-
-                # Initialize Trade Tracking
-                exit_manager.open_trade(
-                    symbol=symbol,
-                    qty=qty,
-                    entry=current_price,
-                    target=target_price,
-                    stoploss=stoploss_price,
-                    strategy=selected_strategy
+                lots = int(trade.get("lots", 0))
+                qty = int(trade.get("quantity", 0))
+                target = float(
+                    trade.get("target_price", 0)
                 )
+
+                if lots <= 0 or qty <= 0:
+                    return False, (
+                        "⚠️ Trade skipped: "
+                        "capital is insufficient for 1 lot "
+                        "under the configured risk."
+                    )
+
+                success, message = self.paper_trader.buy(
+                    symbol=symbol,
+                    price=current_price,
+                    qty=qty,
+                    target=target,
+                    stoploss=stoploss_price
+                )
+
+                if not success:
+                    return False, message
 
                 self.last_signal = "BUY"
 
-                # Display Trade Information Logs
-                print("==========================================")
-                print("🟢 BUY TRADE EXECUTED")
-                print(f"Symbol          : {symbol}")
-                print(f"Entry           : ₹{current_price}")
-                print(f"Stop Loss       : ₹{stoploss_price}")
-                print(f"Target          : ₹{target_price}")
-                print(f"Lot Size        : {LOT_SIZE}")
-                print(f"Lots            : {lots}")
-                print(f"Quantity        : {qty}")
-                print(f"Risk %          : {trade.get('risk_percent', 0)}%")
-                print(f"Maximum Risk    : ₹{trade.get('actual_risk', 0)}")
-                print(f"Potential Profit: ₹{trade.get('potential_profit', 0)}")
-                print(f"AI Strategy     : {selected_strategy}")
-                print("==========================================")
+                logging.info(
+                    f"🟢 PAPER BUY | {symbol} | "
+                    f"Qty={qty} | Entry={current_price} | "
+                    f"SL={stoploss_price} | Target={target}"
+                )
 
-            # ==========================
-            # SELL SIGNAL
-            # ==========================
-            elif signal == "SELL":
-                if not exit_manager.trade_open:
-                    return
+                return True, {
+                    "action": "BUY",
+                    "symbol": symbol,
+                    "qty": qty,
+                    "entry": current_price,
+                    "stoploss": stoploss_price,
+                    "target": target,
+                    "lots": lots,
+                    "strategy": selected_strategy,
+                    "risk": trade
+                }
 
-                qty = exit_manager.qty
+            # -------------------------------------------------
+            # SELL / SHORT
+            # -------------------------------------------------
 
-                place_trade("SELL", symbol, qty, current_price)
+            if signal == "SELL":
+
+                # For short:
+                # Stop loss = 1% above entry
+                # Target = 2% below entry
+
+                stoploss_price = round(
+                    current_price * 1.01,
+                    2
+                )
+
+                target_price = round(
+                    current_price * 0.98,
+                    2
+                )
+
+                risk_per_unit = (
+                    stoploss_price - current_price
+                )
+
+                risk_amount = capital * 0.02
+
+                risk_per_lot = (
+                    risk_per_unit * LOT_SIZE
+                )
+
+                if risk_per_lot <= 0:
+                    return False, "Invalid short risk calculation"
+
+                lots = int(
+                    risk_amount // risk_per_lot
+                )
+
+                qty = lots * LOT_SIZE
+
+                if lots <= 0 or qty <= 0:
+                    return False, (
+                        "⚠️ Short trade skipped: "
+                        "capital is insufficient for 1 lot."
+                    )
+
+                success, message = self.paper_trader.short(
+                    symbol=symbol,
+                    price=current_price,
+                    qty=qty,
+                    target=target_price,
+                    stoploss=stoploss_price
+                )
+
+                if not success:
+                    return False, message
+
                 self.last_signal = "SELL"
 
-                logging.info(f"🔴 SELL Executed: {symbol} Qty={qty}")
-                print(f"🔴 SELL Executed: {symbol} Qty={qty}")
+                logging.info(
+                    f"🔴 PAPER SHORT | {symbol} | "
+                    f"Qty={qty} | Entry={current_price} | "
+                    f"SL={stoploss_price} | Target={target_price}"
+                )
+
+                return True, {
+                    "action": "SELL",
+                    "symbol": symbol,
+                    "qty": qty,
+                    "entry": current_price,
+                    "stoploss": stoploss_price,
+                    "target": target_price,
+                    "lots": lots,
+                    "strategy": selected_strategy
+                }
+
+            return False, "Unknown signal"
 
         except Exception as e:
-            logging.error(f"❌ Error in TradeManager process loop: {e}")
+
+            logging.exception(
+                "❌ TradeManager process error"
+            )
+
+            return False, str(e)

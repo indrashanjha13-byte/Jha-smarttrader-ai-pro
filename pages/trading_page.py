@@ -1,299 +1,1034 @@
 import streamlit as st
-import json
+import pandas as pd
+from datetime import datetime
 import os
 
-SETTINGS_FILE = "settings.json"
+from signals import get_signals
 
+
+SETTINGS_FILE = "settings.json"
+TRADE_FILE = "paper_trades.csv"
+
+
+# =========================================================
+# SETTINGS
+# =========================================================
 
 def load_settings():
     if os.path.exists(SETTINGS_FILE):
         try:
+            import json
+
             with open(SETTINGS_FILE, "r") as f:
-                return json.load(f)
+                data = json.load(f)
+
+            return data if isinstance(data, dict) else {}
+
         except Exception:
             return {}
+
     return {}
 
 
-def save_settings(settings):
-    try:
-        current = load_settings()
-        current.update(settings)
-        with open(SETTINGS_FILE, "w") as f:
-            json.dump(current, f, indent=4)
-        return True
-    except Exception as e:
-        st.error(f"Failed to save settings: {e}")
-        return False
+# =========================================================
+# PAPER TRADES
+# =========================================================
+
+def load_trades():
+
+    columns = [
+        "Time",
+        "Symbol",
+        "Side",
+        "Entry",
+        "Stoploss",
+        "Target",
+        "Quantity",
+        "Status",
+        "Exit",
+        "P&L"
+    ]
+
+    if os.path.exists(TRADE_FILE):
+
+        try:
+            df = pd.read_csv(TRADE_FILE)
+
+            for column in columns:
+                if column not in df.columns:
+                    df[column] = ""
+
+            return df[columns]
+
+        except Exception:
+            pass
+
+    return pd.DataFrame(columns=columns)
 
 
-def settings_page():
-    settings = load_settings()
-    
-    st.title("⚙ Settings")
+def save_trade(trade):
 
-    # ===================================
-    # Appearance
-    # ===================================
-    st.subheader("🎨 Appearance")
-    theme = st.selectbox(
-        "Theme",
-        ["Dark", "Light"],
-        index=0 if settings.get("theme", "Dark") == "Dark" else 1,
-        key="app_theme"
+    df = load_trades()
+
+    new_trade = pd.DataFrame([trade])
+
+    df = pd.concat(
+        [df, new_trade],
+        ignore_index=True
     )
+
+    df.to_csv(
+        TRADE_FILE,
+        index=False
+    )
+
+
+# =========================================================
+# GET MARKET SIGNAL
+# =========================================================
+
+def get_market_signal(symbol):
+
+    try:
+
+        data = get_signals(symbol)
+
+        if not isinstance(data, dict):
+            return {
+                "error": "Invalid signal response"
+            }
+
+        if "error" in data:
+            return data
+
+        price = float(
+            data.get("Close", 0) or 0
+        )
+
+        # Try common signal field names
+        signal = (
+            data.get("signal")
+            or data.get("Signal")
+            or data.get("final_signal")
+            or data.get("action")
+            or "WAIT"
+        )
+
+        signal = str(signal).upper()
+
+        if "BUY" in signal:
+            signal = "BUY"
+
+        elif "SELL" in signal:
+            signal = "SELL"
+
+        else:
+            signal = "WAIT"
+
+        # Try confidence fields
+        confidence = (
+            data.get("confidence")
+            or data.get("Confidence")
+            or data.get("ai_confidence")
+            or 0
+        )
+
+        try:
+            confidence = float(confidence)
+        except Exception:
+            confidence = 0
+
+        return {
+            "price": price,
+            "signal": signal,
+            "confidence": confidence,
+            "raw": data
+        }
+
+    except Exception as e:
+
+        return {
+            "error": str(e)
+        }
+
+
+# =========================================================
+# P&L CALCULATION
+# =========================================================
+
+def calculate_pnl(
+    side,
+    entry,
+    exit_price,
+    quantity
+):
+
+    try:
+
+        entry = float(entry)
+        exit_price = float(exit_price)
+        quantity = int(quantity)
+
+        if side == "BUY":
+
+            return (
+                exit_price - entry
+            ) * quantity
+
+        if side == "SELL":
+
+            return (
+                entry - exit_price
+            ) * quantity
+
+        return 0
+
+    except Exception:
+
+        return 0
+
+
+# =========================================================
+# TRADING PAGE
+# =========================================================
+
+def trading_page(
+    trader=None,
+    symbol=None
+):
+
+    settings = load_settings()
+
+    # =====================================================
+    # SETTINGS
+    # =====================================================
+
+    paper_trade = settings.get(
+        "paper_trade",
+        True
+    )
+
+    auto_trade = settings.get(
+        "auto_trade",
+        False
+    )
+
+    ai_mode = settings.get(
+        "ai_mode",
+        "Balanced"
+    )
+
+    confidence_limit = int(
+        settings.get(
+            "confidence",
+            70
+        )
+    )
+
+    timeframe = settings.get(
+        "timeframe",
+        "5m"
+    )
+
+    target_points = float(
+        settings.get(
+            "default_target",
+            40
+        )
+    )
+
+    stoploss_points = float(
+        settings.get(
+            "default_stoploss",
+            20
+        )
+    )
+
+    max_trades = int(
+        settings.get(
+            "max_trades",
+            5
+        )
+    )
+
+    # =====================================================
+    # TITLE
+    # =====================================================
+
+    st.title(
+        "💰 SmartTrader AI Pro — Trading"
+    )
+
+    st.caption(
+        "Paper Trading Terminal"
+    )
+
+    # =====================================================
+    # TOP STATUS
+    # =====================================================
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+
+        st.metric(
+            "Trading Mode",
+            "PAPER" if paper_trade else "LIVE"
+        )
+
+    with col2:
+
+        st.metric(
+            "AI Mode",
+            ai_mode
+        )
+
+    with col3:
+
+        st.metric(
+            "Timeframe",
+            timeframe
+        )
+
+    with col4:
+
+        st.metric(
+            "Auto Trading",
+            "ON" if auto_trade else "OFF"
+        )
 
     st.divider()
 
-    # ===================================
-    # AI Settings
-    # ===================================
-    st.header("🤖 AI Settings")
+    # =====================================================
+    # SAFETY
+    # =====================================================
 
-    ai_modes = ["Conservative", "Balanced", "Aggressive"]
-    saved_mode = settings.get("ai_mode", "Balanced")
-    mode_idx = ai_modes.index(saved_mode) if saved_mode in ai_modes else 1
+    if paper_trade:
 
-    ai_mode = st.selectbox(
-        "AI Trading Mode",
-        ai_modes,
-        index=mode_idx,
-        key="ai_mode_select"
+        st.success(
+            "🟢 PAPER TRADING ACTIVE"
+        )
+
+    else:
+
+        st.error(
+            "🔴 LIVE MODE SELECTED"
+        )
+
+        st.warning(
+            "Live order execution is disabled. "
+            "No broker order will be sent."
+        )
+
+    # =====================================================
+    # SYMBOL
+    # =====================================================
+
+    st.header("📊 Market")
+
+    symbols = [
+        "^NSEI",
+        "^NSEBANK",
+        "^BSESN",
+        "RELIANCE.NS",
+        "TCS.NS",
+        "INFY.NS",
+        "HDFCBANK.NS",
+        "ICICIBANK.NS",
+        "SBIN.NS",
+        "LT.NS",
+        "AXISBANK.NS"
+    ]
+
+    if symbol not in symbols:
+        symbol = "^NSEI"
+
+    selected_symbol = st.selectbox(
+        "Trading Symbol",
+        symbols,
+        index=symbols.index(symbol)
     )
 
-    confidence = st.slider(
-        "Minimum AI Confidence %",
-        50,
-        100,
-        int(settings.get("confidence", 70)),
-        key="ai_confidence_slider"
+    # =====================================================
+    # MARKET SIGNAL
+    # =====================================================
+
+    st.header("🤖 AI Market Signal")
+
+    if st.button(
+        "🔄 Refresh Signal",
+        use_container_width=True
+    ):
+
+        with st.spinner(
+            "Loading market signal..."
+        ):
+
+            result = get_market_signal(
+                selected_symbol
+            )
+
+            st.session_state[
+                "trading_signal"
+            ] = result
+
+    result = st.session_state.get(
+        "trading_signal"
     )
 
-    paper_trade = st.toggle(
-        "Paper Trading Mode",
-        value=settings.get("paper_trade", True),
-        key="paper_trade_toggle"
+    if result:
+
+        if "error" in result:
+
+            st.error(
+                f"Market data error: "
+                f"{result['error']}"
+            )
+
+        else:
+
+            price = result["price"]
+            signal = result["signal"]
+            confidence = result["confidence"]
+
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+
+                st.metric(
+                    "Current Price",
+                    f"₹{price:,.2f}"
+                )
+
+            with col2:
+
+                st.metric(
+                    "Signal",
+                    signal
+                )
+
+            with col3:
+
+                st.metric(
+                    "Confidence",
+                    f"{confidence:.0f}%"
+                )
+
+            if signal == "BUY":
+
+                st.success(
+                    f"🟢 BUY Signal — "
+                    f"Confidence {confidence:.0f}%"
+                )
+
+            elif signal == "SELL":
+
+                st.error(
+                    f"🔴 SELL Signal — "
+                    f"Confidence {confidence:.0f}%"
+                )
+
+            else:
+
+                st.warning(
+                    "⏳ WAIT — No confirmed trade"
+                )
+
+            # Confidence filter
+
+            if confidence < confidence_limit:
+
+                st.warning(
+                    f"⚠️ Signal blocked: "
+                    f"{confidence:.0f}% confidence "
+                    f"is below required "
+                    f"{confidence_limit}%."
+                )
+
+            else:
+
+                st.success(
+                    f"✅ Confidence filter passed "
+                    f"({confidence:.0f}% ≥ "
+                    f"{confidence_limit}%)"
+                )
+
+    else:
+
+        st.info(
+            "Click 'Refresh Signal' to get "
+            "the latest market signal."
+        )
+
+    st.divider()
+
+    # =====================================================
+    # TRADE SETUP
+    # =====================================================
+
+    st.header("🎯 Trade Setup")
+
+    current_price = 0.0
+
+    if result and "error" not in result:
+
+        current_price = float(
+            result.get("price", 0)
+        )
+
+    entry_default = (
+        current_price
+        if current_price > 0
+        else 100.0
     )
 
-    auto_trade = st.toggle(
-        "Enable Auto Trading",
-        value=settings.get("auto_trade", False),
-        key="auto_trade_toggle"
+    entry_price = st.number_input(
+        "Entry Price",
+        min_value=0.0,
+        value=float(entry_default),
+        step=0.05
     )
+
+    trade_side = st.selectbox(
+        "Trade Side",
+        [
+            "Auto Signal",
+            "BUY",
+            "SELL"
+        ]
+    )
+
+    quantity = st.number_input(
+        "Quantity",
+        min_value=1,
+        value=1,
+        step=1
+    )
+
+    # =====================================================
+    # SIDE
+    # =====================================================
+
+    if trade_side == "Auto Signal":
+
+        if result and "error" not in result:
+
+            execution_side = result.get(
+                "signal",
+                "WAIT"
+            )
+
+        else:
+
+            execution_side = "WAIT"
+
+    else:
+
+        execution_side = trade_side
+
+    # =====================================================
+    # SL / TARGET
+    # =====================================================
+
+    if execution_side == "BUY":
+
+        default_sl = max(
+            entry_price - stoploss_points,
+            0
+        )
+
+        default_target = (
+            entry_price +
+            target_points
+        )
+
+    elif execution_side == "SELL":
+
+        default_sl = (
+            entry_price +
+            stoploss_points
+        )
+
+        default_target = max(
+            entry_price -
+            target_points,
+            0
+        )
+
+    else:
+
+        default_sl = max(
+            entry_price - stoploss_points,
+            0
+        )
+
+        default_target = (
+            entry_price +
+            target_points
+        )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        stoploss = st.number_input(
+            "Stoploss",
+            min_value=0.0,
+            value=float(default_sl),
+            step=0.05
+        )
+
+    with col2:
+
+        target = st.number_input(
+            "Target",
+            min_value=0.0,
+            value=float(default_target),
+            step=0.05
+        )
+
+    # =====================================================
+    # RISK REWARD
+    # =====================================================
+
+    risk = abs(
+        entry_price - stoploss
+    )
+
+    reward = abs(
+        target - entry_price
+    )
+
+    if risk > 0:
+
+        rr = reward / risk
+
+    else:
+
+        rr = 0
 
     st.info(
-        f"""
-AI Mode : **{ai_mode}**  
-Confidence : **{confidence}%**  
-Paper Trading : **{'ON' if paper_trade else 'OFF'}**  
-Auto Trading : **{'ON' if auto_trade else 'OFF'}**
-"""
+        f"Risk: ₹{risk:.2f} | "
+        f"Reward: ₹{reward:.2f} | "
+        f"Risk/Reward: 1:{rr:.2f}"
     )
 
-    st.divider()
+    # =====================================================
+    # EXECUTION STATUS
+    # =====================================================
 
-    # ===================================
-    # Risk Management
-    # ===================================
-    st.header("💰 Risk Management")
+    st.header("🚀 Execution")
 
-    risk_per_trade = st.slider(
-        "Risk Per Trade (%)",
-        1,
-        10,
-        int(settings.get("risk_per_trade", 2)),
-        key="risk_slider"
-    )
+    if execution_side == "BUY":
 
-    max_trades = st.number_input(
-        "Max Trades Per Day",
-        min_value=1,
-        max_value=100,
-        value=int(settings.get("max_trades", 5)),
-        key="max_trades_input"
-    )
+        st.success(
+            "🟢 BUY selected"
+        )
 
-    default_target = st.number_input(
-        "Default Target (Points)",
-        min_value=5,
-        value=int(settings.get("default_target", 40)),
-        key="target_input"
-    )
+    elif execution_side == "SELL":
 
-    default_stoploss = st.number_input(
-        "Default Stoploss (Points)",
-        min_value=5,
-        value=int(settings.get("default_stoploss", 20)),
-        key="stoploss_input"
-    )
+        st.error(
+            "🔴 SELL selected"
+        )
 
-    st.divider()
+    else:
 
-    # ===================================
-    # Broker Settings
-    # ===================================
-    st.header("🏦 Broker Settings")
+        st.warning(
+            "⏳ WAIT — No valid trade"
+        )
 
-    brokers = ["Kotak Neo", "Dhan", "Zerodha", "Upstox", "Angel One"]
-    saved_broker = settings.get("broker", "Kotak Neo")
-    broker_idx = brokers.index(saved_broker) if saved_broker in brokers else 0
+    # =====================================================
+    # PAPER TRADE BUTTON
+    # =====================================================
 
-    broker = st.selectbox(
-        "Select Broker",
-        brokers,
-        index=broker_idx,
-        key="broker_select"
-    )
+    if st.button(
+        "🧪 Execute Paper Trade",
+        type="primary",
+        use_container_width=True
+    ):
 
-    client_id = st.text_input("Client ID", value=settings.get("client_id", ""), key="client_id_input")
-    api_key = st.text_input("API Key", value=settings.get("api_key", ""), type="password", key="api_key_input")
-    api_secret = st.text_input("API Secret", value=settings.get("api_secret", ""), type="password", key="api_secret_input")
+        # -------------------------------------------------
+        # PAPER MODE CHECK
+        # -------------------------------------------------
 
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🔗 Connect Broker", key="btn_connect_broker"):
-            st.success(f"✅ {broker} Connected Successfully")
+        if not paper_trade:
 
-    with col2:
-        if st.button("❌ Disconnect Broker", key="btn_disconnect_broker"):
-            st.warning("Broker Disconnected")
+            st.error(
+                "Paper Trading is OFF. "
+                "Live execution is disabled."
+            )
 
-    st.divider()
+        # -------------------------------------------------
+        # SIGNAL CHECK
+        # -------------------------------------------------
 
-    # ===================================
-    # Chart Settings
-    # ===================================
-    st.header("📈 Chart Settings")
+        elif execution_side not in [
+            "BUY",
+            "SELL"
+        ]:
 
-    show_ema = st.checkbox("Show EMA", value=settings.get("show_ema", True), key="chk_ema")
-    show_supertrend = st.checkbox("Show SuperTrend", value=settings.get("show_supertrend", True), key="chk_supertrend")
-    show_rsi = st.checkbox("Show RSI", value=settings.get("show_rsi", True), key="chk_rsi")
-    show_macd = st.checkbox("Show MACD", value=settings.get("show_macd", True), key="chk_macd")
-    show_volume = st.checkbox("Show Volume", value=settings.get("show_volume", True), key="chk_volume")
-    show_bollinger = st.checkbox("Show Bollinger Bands", value=settings.get("show_bollinger", False), key="chk_bollinger")
+            st.warning(
+                "No valid BUY/SELL signal."
+            )
 
-    timeframes = ["1m", "3m", "5m", "15m", "30m", "1h", "1d"]
-    saved_tf = settings.get("timeframe", "5m")
-    tf_idx = timeframes.index(saved_tf) if saved_tf in timeframes else 2
+        # -------------------------------------------------
+        # CONFIDENCE CHECK
+        # -------------------------------------------------
 
-    timeframe = st.selectbox(
-        "Default Timeframe",
-        timeframes,
-        index=tf_idx,
-        key="tf_select"
-    )
+        elif (
+            result
+            and "error" not in result
+            and result.get(
+                "confidence",
+                0
+            ) < confidence_limit
+            and trade_side == "Auto Signal"
+        ):
 
-    st.divider()
+            st.warning(
+                "Trade blocked by AI confidence filter."
+            )
 
-    # ===================================
-    # User Profile
-    # ===================================
-    st.header("👤 User Profile")
+        # -------------------------------------------------
+        # ENTRY CHECK
+        # -------------------------------------------------
 
-    name = st.text_input("Full Name", value=settings.get("user_name", "Pratham Jha"), key="user_name_input")
-    email = st.text_input("Email", value=settings.get("user_email", ""), key="user_email_input")
-    mobile = st.text_input("Mobile Number", value=settings.get("user_mobile", ""), key="user_mobile_input")
+        elif entry_price <= 0:
 
-    st.divider()
+            st.error(
+                "Invalid entry price."
+            )
 
-    # ===================================
-    # Telegram Settings
-    # ===================================
-    st.header("📱 Telegram Settings")
+        # -------------------------------------------------
+        # RISK CHECK
+        # -------------------------------------------------
 
-    telegram_token = st.text_input("Bot Token", value=settings.get("telegram_token", ""), type="password", key="tg_token")
-    chat_id = st.text_input("Chat ID", value=settings.get("chat_id", ""), key="tg_chat_id")
-    telegram_alert = st.checkbox("Enable Telegram Alerts", value=settings.get("telegram_alert", True), key="chk_tg_alert")
+        elif risk <= 0:
 
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🔗 Connect Telegram", key="btn_tg_connect"):
-            st.success("Telegram Connected Successfully")
+            st.error(
+                "Stoploss must be different "
+                "from entry price."
+            )
 
-    with col2:
-        if st.button("📤 Test Message", key="btn_tg_test"):
-            st.info("Test Message Sent")
+        # -------------------------------------------------
+        # DAILY TRADE LIMIT
+        # -------------------------------------------------
 
-    st.divider()
+        else:
 
-    # ===================================
-    # API Key Manager
-    # ===================================
-    st.header("🔑 API Key Manager")
+            trades = load_trades()
 
-    openai_key = st.text_input("OpenAI API Key", value=settings.get("openai_key", ""), type="password", key="key_openai")
-    gemini_key = st.text_input("Gemini API Key", value=settings.get("gemini_key", ""), type="password", key="key_gemini")
-    news_key = st.text_input("News API Key", value=settings.get("news_key", ""), type="password", key="key_news")
+            today = datetime.now().strftime(
+                "%Y-%m-%d"
+            )
 
-    st.divider()
+            today_trades = trades[
+                trades["Time"].astype(str).str.startswith(
+                    today
+                )
+            ]
 
-    # Save All Settings Button
-    if st.button("💾 Save All Settings", use_container_width=True, type="primary"):
-        new_settings = {
-            "theme": theme,
-            "ai_mode": ai_mode,
-            "confidence": confidence,
-            "paper_trade": paper_trade,
-            "auto_trade": auto_trade,
-            "risk_per_trade": risk_per_trade,
-            "max_trades": max_trades,
-            "default_target": default_target,
-            "default_stoploss": default_stoploss,
-            "broker": broker,
-            "client_id": client_id,
-            "api_key": api_key,
-            "api_secret": api_secret,
-            "show_ema": show_ema,
-            "show_supertrend": show_supertrend,
-            "show_rsi": show_rsi,
-            "show_macd": show_macd,
-            "show_volume": show_volume,
-            "show_bollinger": show_bollinger,
-            "timeframe": timeframe,
-            "user_name": name,
-            "user_email": email,
-            "user_mobile": mobile,
-            "telegram_token": telegram_token,
-            "chat_id": chat_id,
-            "telegram_alert": telegram_alert,
-            "openai_key": openai_key,
-            "gemini_key": gemini_key,
-            "news_key": news_key
-        }
-        if save_settings(new_settings):
-            st.success("✅ All Settings Saved Successfully!")
+            if len(today_trades) >= max_trades:
+
+                st.error(
+                    f"Daily trade limit reached: "
+                    f"{max_trades}"
+                )
+
+            else:
+
+                trade = {
+
+                    "Time":
+                        datetime.now().strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        ),
+
+                    "Symbol":
+                        selected_symbol,
+
+                    "Side":
+                        execution_side,
+
+                    "Entry":
+                        entry_price,
+
+                    "Stoploss":
+                        stoploss,
+
+                    "Target":
+                        target,
+
+                    "Quantity":
+                        quantity,
+
+                    "Status":
+                        "OPEN",
+
+                    "Exit":
+                        "",
+
+                    "P&L":
+                        0
+                }
+
+                save_trade(trade)
+
+                st.success(
+                    f"✅ Paper Trade Opened: "
+                    f"{execution_side} "
+                    f"{selected_symbol}"
+                )
+
+                st.rerun()
 
     st.divider()
 
-    # ===================================
-    # About & Backup / Reset
-    # ===================================
-    st.header("ℹ About SmartTrader AI Pro")
-    st.markdown("""
-    ### 🚀 SmartTrader AI Pro
-    Version : **1.0**  
-    Developer : **Indrashan Jha**  
+    # =====================================================
+    # OPEN POSITIONS
+    # =====================================================
 
-    **Features:**  
-    ✅ AI Trading | ✅ Paper Trading | ✅ Live Trading  
-    ✅ Portfolio | ✅ Reports | ✅ Risk Management  
-    ✅ AI Scanner | ✅ Telegram Alerts  
+    st.header("📌 Open Positions")
 
-    © 2026 SmartTrader AI Pro
-    """)
+    trades = load_trades()
+
+    if not trades.empty:
+
+        open_trades = trades[
+            trades["Status"] == "OPEN"
+        ].copy()
+
+        if not open_trades.empty:
+
+            st.dataframe(
+                open_trades,
+                use_container_width=True,
+                hide_index=True
+            )
+
+        else:
+
+            st.info(
+                "No open positions."
+            )
+
+    else:
+
+        st.info(
+            "No paper trades yet."
+        )
+
+    # =====================================================
+    # CLOSE PAPER TRADE
+    # =====================================================
+
+    if not trades.empty:
+
+        open_trades = trades[
+            trades["Status"] == "OPEN"
+        ].copy()
+
+        if not open_trades.empty:
+
+            st.divider()
+
+            st.header(
+                "🛑 Close Paper Position"
+            )
+
+            position_index = st.selectbox(
+                "Select Position",
+                open_trades.index.tolist(),
+                format_func=lambda x:
+                    f"{open_trades.loc[x, 'Symbol']} "
+                    f"{open_trades.loc[x, 'Side']} "
+                    f"@ {open_trades.loc[x, 'Entry']}"
+            )
+
+            exit_price = st.number_input(
+                "Exit Price",
+                min_value=0.0,
+                value=0.0,
+                step=0.05
+            )
+
+            if st.button(
+                "🛑 Close Position",
+                use_container_width=True
+            ):
+
+                if exit_price <= 0:
+
+                    st.error(
+                        "Enter a valid exit price."
+                    )
+
+                else:
+
+                    idx = position_index
+
+                    side = str(
+                        trades.loc[idx, "Side"]
+                    )
+
+                    entry = float(
+                        trades.loc[idx, "Entry"]
+                    )
+
+                    qty = int(
+                        trades.loc[idx, "Quantity"]
+                    )
+
+                    pnl = calculate_pnl(
+                        side,
+                        entry,
+                        exit_price,
+                        qty
+                    )
+
+                    trades.loc[
+                        idx,
+                        "Status"
+                    ] = "CLOSED"
+
+                    trades.loc[
+                        idx,
+                        "Exit"
+                    ] = exit_price
+
+                    trades.loc[
+                        idx,
+                        "P&L"
+                    ] = pnl
+
+                    trades.to_csv(
+                        TRADE_FILE,
+                        index=False
+                    )
+
+                    if pnl >= 0:
+
+                        st.success(
+                            f"✅ Position Closed — "
+                            f"P&L ₹{pnl:.2f}"
+                        )
+
+                    else:
+
+                        st.error(
+                            f"❌ Position Closed — "
+                            f"P&L ₹{pnl:.2f}"
+                        )
+
+                    st.rerun()
 
     st.divider()
 
-    st.header("🗑 Backup & Reset")
-    col_b1, col_b2 = st.columns(2)
-    with col_b1:
-        if st.button("Create Backup", key="btn_create_backup"):
-            save_settings(load_settings())
-            st.success("Backup Created Successfully")
-    with col_b2:
-        if st.button("⚠ Reset All Settings", key="btn_reset_all"):
-            if os.path.exists(SETTINGS_FILE):
-                os.remove(SETTINGS_FILE)
-            st.warning("All Settings Reset Successfully! Reloading...")
-            st.rerun() 
-            
+    # =====================================================
+    # TRADE HISTORY
+    # =====================================================
+
+    st.header("📜 Trade History")
+
+    trades = load_trades()
+
+    if not trades.empty:
+
+        st.dataframe(
+            trades.tail(20),
+            use_container_width=True,
+            hide_index=True
+        )
+
+    else:
+
+        st.info(
+            "Trade history is empty."
+        )
+
+    # =====================================================
+    # STATISTICS
+    # =====================================================
+
+    st.header("📊 Trading Statistics")
+
+    if not trades.empty:
+
+        total_trades = len(trades)
+
+        closed = trades[
+            trades["Status"] == "CLOSED"
+        ].copy()
+
+        if not closed.empty:
+
+            pnl = pd.to_numeric(
+                closed["P&L"],
+                errors="coerce"
+            ).fillna(0)
+
+            total_pnl = float(
+                pnl.sum()
+            )
+
+            winning = int(
+                (pnl > 0).sum()
+            )
+
+            losing = int(
+                (pnl < 0).sum()
+            )
+
+            win_rate = (
+                winning /
+                len(closed) *
+                100
+            )
+
+        else:
+
+            total_pnl = 0
+            winning = 0
+            losing = 0
+            win_rate = 0
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+
+            st.metric(
+                "Total Trades",
+                total_trades
+            )
+
+        with col2:
+
+            st.metric(
+                "Winning",
+                winning
+            )
+
+        with col3:
+
+            st.metric(
+                "Losing",
+                losing
+            )
+
+        with col4:
+
+            st.metric(
+                "Win Rate",
+                f"{win_rate:.1f}%"
+            )
+
+        st.metric(
+            "Total P&L",
+            f"₹{total_pnl:.2f}"
+        )
+
+    else:
+
+        st.info(
+            "Statistics will appear after trades."
+        )
