@@ -242,7 +242,6 @@ def settings_page():
     )
 
     st.divider()
-
     # =====================================================
     # AI SETTINGS
     # =====================================================
@@ -298,23 +297,39 @@ def settings_page():
         key="paper_trade_toggle"
     )
 
+    # =====================================================
+    # AUTO TRADING
+    # =====================================================
+
     auto_trade = st.toggle(
         "🤖 Enable Auto Trading",
         value=bool(
             settings.get(
                 "auto_trade",
-                False
+                True
             )
         ),
         key="auto_trade_toggle"
     )
+   
+    # =====================================================
+    # STATUS
+    # =====================================================
 
-    # Safety
     if paper_trade:
 
         st.success(
             "🟢 Paper Trading is ON"
         )
+
+        if auto_trade:
+            st.success(
+                "🤖 Auto Paper Trading is ON"
+            )
+        else:
+            st.info(
+                "🔵 Auto Paper Trading is OFF"
+            )
 
     else:
 
@@ -322,30 +337,25 @@ def settings_page():
             "⚠️ Paper Trading is OFF"
         )
 
-    if auto_trade:
-
-        st.warning(
-            "⚠️ Auto Trading is ON. "
-            "Live execution must remain disabled "
-            "until broker integration is verified."
-        )
-
-    else:
-
-        st.info(
-            "🔵 Auto Trading is OFF"
-        )
+        if auto_trade:
+            st.warning(
+                "⚠️ Auto Trading is ON, but Paper Trading is OFF."
+            )
+        else:
+            st.info(
+                "🔵 Auto Trading is OFF"
+            )
 
     st.info(
         f"""
-**AI Mode:** {ai_mode}
+    **AI Mode:** {ai_mode}
 
-**Minimum Confidence:** {confidence}%
+    **Minimum Confidence:** {confidence}%
 
-**Paper Trading:** {"ON" if paper_trade else "OFF"}
+    **Paper Trading:** {"ON" if paper_trade else "OFF"}
 
-**Auto Trading:** {"ON" if auto_trade else "OFF"}
-"""
+    **Auto Trading:** {"ON" if auto_trade else "OFF"}
+    """
     )
 
     st.divider()

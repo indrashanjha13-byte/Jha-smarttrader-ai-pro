@@ -273,7 +273,6 @@ def combined_signal(
 
         return "HOLD"
 
-
 # =========================================================
 # Option Selection
 # =========================================================
@@ -286,6 +285,11 @@ def option_selection(
     """
     Converts signal + strike preference
     into an option action.
+
+    Option Side:
+    CE  -> Call Option
+    PE  -> Put Option
+    ALL -> Both CE and PE
     """
 
     signal = str(
@@ -300,22 +304,35 @@ def option_selection(
         option_side or "CE"
     ).upper()
 
+    # =========================
+    # BUY Signal
+    # =========================
+
     if signal == "BUY":
 
         if side == "PE":
             return f"Buy PE {mode}"
 
+        if side == "ALL":
+            return f"Buy CE {mode} + Buy PE {mode}"
+
         return f"Buy CE {mode}"
+
+    # =========================
+    # SELL Signal
+    # =========================
 
     if signal == "SELL":
 
         if side == "PE":
             return f"Sell PE {mode}"
 
+        if side == "ALL":
+            return f"Sell CE {mode} + Sell PE {mode}"
+
         return f"Sell CE {mode}"
 
     return "No Trade"
-
 
 # =========================================================
 # Scalper Signal

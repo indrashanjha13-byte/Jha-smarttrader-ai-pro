@@ -17,9 +17,24 @@ class TradeManager:
         Broker integration will be added after Paper Trading testing.
     """
 
-    def __init__(self, paper_trader=None):
+    def __init__(
+        self,
+        paper_trader=None,
+        trailing_enabled=False,
+        trailing_start=10.0,
+        trailing_distance=5.0
+    ):
         self.paper_trader = paper_trader
         self.last_signal = None
+        self.active_position = None
+
+        # =====================================================
+        # TRAILING STOPLOSS SETTINGS
+        # =====================================================
+
+        self.trailing_enabled = bool(trailing_enabled)
+        self.trailing_start = float(trailing_start)
+        self.trailing_distance = float(trailing_distance)
 
     # =========================================================
     # Set Paper Trader
@@ -27,6 +42,50 @@ class TradeManager:
 
     def set_paper_trader(self, paper_trader):
         self.paper_trader = paper_trader
+
+    # =========================================================
+    # Set Trailing Stoploss
+    # =========================================================
+
+    def set_trailing_settings(
+        self,
+        enabled=False,
+        start=10.0,
+        distance=5.0
+    ):
+        """
+        Update trailing stoploss settings.
+
+        PAPER TRADING ONLY.
+        """
+
+        start = float(start)
+        distance = float(distance)
+
+        if start <= 0:
+            return False, "Trailing start must be greater than 0"
+
+        if distance <= 0:
+            return False, "Trailing distance must be greater than 0"
+
+        if distance >= start:
+            return False, (
+                "Trailing distance must be less "
+                "than trailing start"
+            )
+
+        self.trailing_enabled = bool(enabled)
+        self.trailing_start = start
+        self.trailing_distance = distance
+
+        logging.info(
+            f"Trailing settings updated | "
+            f"Enabled={self.trailing_enabled} | "
+            f"Start={self.trailing_start} | "
+            f"Distance={self.trailing_distance}"
+        )
+
+        return True, "Trailing settings updated"
 
     # =========================================================
     # Process Signal
@@ -45,11 +104,215 @@ class TradeManager:
             current_price = float(current_price)
             capital = float(capital)
 
+            # =====================================================
+            # Validation
+            # =====================================================
+
+            if not symbol:
+                return False, "Invalid symbol"
+
+            if signal not in ("BUY", "SELL"):
+                return False, "Invalid signal"
+
             if current_price <= 0:
                 return False, "Invalid price"
 
             if capital <= 0:
                 return False, "Invalid capital"
+
+            # =====================================================
+            # Paper Trading Settings
+            # =====================================================
+
+            risk_percent = 1.0
+            stoploss_percent = 0.5
+            target_percent = 1.0
+
+            # =====================================================
+            # Risk Calculation
+            # =====================================================
+
+            risk_amount = capital * (
+                risk_percent / 100
+            )
+
+            sl_distance = current_price * (
+                stoploss_percent / 100
+            )
+
+            if sl_distance <= 0:
+                return False, "Invalid stoploss distance"
+
+            # =====================================================
+            # Quantity
+            # =====================================================
+
+            quantity = int(
+                risk_amount / sl_distance
+            )
+
+            if quantity < 1:
+                quantity = 1
+
+            # =====================================================
+            # Entry / SL / Target
+            # =====================================================
+
+            entry_price = current_price
+
+            if signal == "BUY":
+
+                stoploss = (
+                    entry_price - sl_distance
+                )
+
+                target = (
+                    entry_price
+                    + entry_price * target_percent / 100
+                )
+
+            else:  # SELL
+
+                stoploss = (
+                    entry_price + sl_distance
+                )
+
+                target = (
+                    entry_price
+                    - entry_price * target_percent / 100
+                )
+
+            # =====================================================
+            # Paper Trade
+            # =====================================================
+
+            paper_trade = {
+                "symbol": symbol,
+                "side": signal,
+                "entry_price": round(entry_price, 2),
+                "quantity": quantity,
+                "stoploss": round(stoploss, 2),
+                "target": round(target, 2),
+                "capital": round(capital, 2),
+                "mode": "PAPER",
+                "status": "OPEN"
+            }
+
+            self.active_position = paper_trade
+
+            return True, paper_trade
+
+        except Exception as e:
+            return False, f"Process error: {e}"
+        
+    # =========================================================
+    # Get Active Position
+    # =========================================================
+
+    def get_active_position(self):
+        return self.active_position
+    
+    # =========================================================
+    # Check Paper Position
+    # =========================================================
+
+    def check_position(
+        self,
+        position,
+        current_price
+    ):
+        try:
+            current_price = float(current_price)
+
+            if not position:
+                return False, "No active position"
+
+            if current_price <= 0:
+                return False, "Invalid price"
+
+            side = position["side"]
+            entry_price = float(position["entry_price"])
+            quantity = int(position["quantity"])
+            stoploss = float(position["stoploss"])
+            target = float(position["target"])
+
+            # =====================================================
+            # BUY Position
+            # =====================================================
+
+            if side == "BUY":
+
+                if current_price <= stoploss:
+                    pnl = (
+                        current_price - entry_price
+                    ) * quantity
+
+                    return True, {
+                        "status": "EXIT",
+                        "reason": "STOPLOSS",
+                        "exit_price": current_price,
+                        "pnl": round(pnl, 2)
+                    }
+
+                if current_price >= target:
+                    pnl = (
+                        current_price - entry_price
+                    ) * quantity
+
+                    return True, {
+                        "status": "EXIT",
+                        "reason": "TARGET",
+                        "exit_price": current_price,
+                        "pnl": round(pnl, 2)
+                    }
+
+            # =====================================================
+            # SELL Position
+            # =====================================================
+
+            elif side == "SELL":
+
+                if current_price >= stoploss:
+                    pnl = (
+                        entry_price - current_price
+                    ) * quantity
+
+                    return True, {
+                        "status": "EXIT",
+                        "reason": "STOPLOSS",
+                        "exit_price": current_price,
+                        "pnl": round(pnl, 2)
+                    }
+
+                if current_price <= target:
+                    pnl = (
+                        entry_price - current_price
+                    ) * quantity
+
+                    return True, {
+                        "status": "EXIT",
+                        "reason": "TARGET",
+                        "exit_price": current_price,
+                        "pnl": round(pnl, 2)
+                    }
+
+            return True, {
+                "status": "HOLD",
+                "current_price": current_price,
+                "pnl": round(
+                    (
+                        current_price - entry_price
+                    ) * quantity
+                    if side == "BUY"
+                    else (
+                        entry_price - current_price
+                    ) * quantity,
+                    2
+                )
+            }
+
+        except Exception as e:
+            return False, f"Position check error: {e}"
 
             # -------------------------------------------------
             # HOLD
@@ -166,7 +429,10 @@ class TradeManager:
                     price=current_price,
                     qty=qty,
                     target=target,
-                    stoploss=stoploss_price
+                    stoploss=stoploss_price,
+                    trailing_enabled=self.trailing_enabled,
+                    trailing_start=self.trailing_start,
+                    trailing_distance=self.trailing_distance
                 )
 
                 if not success:
@@ -242,7 +508,10 @@ class TradeManager:
                     price=current_price,
                     qty=qty,
                     target=target_price,
-                    stoploss=stoploss_price
+                    stoploss=stoploss_price,
+                    trailing_enabled=self.trailing_enabled,
+                    trailing_start=self.trailing_start,
+                    trailing_distance=self.trailing_distance
                 )
 
                 if not success:

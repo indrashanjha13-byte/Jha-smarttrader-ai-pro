@@ -4,31 +4,12 @@ from datetime import datetime
 import os
 
 from signals import get_signals
+from settings_manager import load_settings, save_settings
+from paper_trading import PaperTrader
 
 
 SETTINGS_FILE = "settings.json"
 TRADE_FILE = "paper_trades.csv"
-
-
-# =========================================================
-# SETTINGS
-# =========================================================
-
-def load_settings():
-    if os.path.exists(SETTINGS_FILE):
-        try:
-            import json
-
-            with open(SETTINGS_FILE, "r") as f:
-                data = json.load(f)
-
-            return data if isinstance(data, dict) else {}
-
-        except Exception:
-            return {}
-
-    return {}
-
 
 # =========================================================
 # PAPER TRADES
@@ -200,6 +181,19 @@ def trading_page(
     settings = load_settings()
 
     # =====================================================
+    # PAPER TRADER CONNECTION
+    # =====================================================
+
+    if trader is None:
+
+        if "trader" not in st.session_state:
+            st.session_state.trader = PaperTrader(
+                initial_balance=100000
+            )
+
+        trader = st.session_state.trader
+
+    # =====================================================
     # SETTINGS
     # =====================================================
 
@@ -247,6 +241,29 @@ def trading_page(
     max_trades = int(
         settings.get(
             "max_trades",
+            5
+        )
+    )
+
+    # =====================================================
+    # TRAILING STOPLOSS SETTINGS
+    # =====================================================
+
+    trailing_enabled = settings.get(
+        "trailing_enabled",
+        False
+    )
+
+    trailing_start = float(
+        settings.get(
+            "trailing_start",
+            10
+        )
+    )
+
+    trailing_distance = float(
+        settings.get(
+            "trailing_distance",
             5
         )
     )
@@ -488,6 +505,37 @@ def trading_page(
         value=float(entry_default),
         step=0.05
     )
+    
+    # =====================================================
+    # PAPER TRADER AUTO EXIT / TRAILING UPDATE
+    # =====================================================
+
+    if (
+        trader is not None
+        and trader.position is not None
+        and current_price > 0
+    ):
+
+        try:
+
+            exit_result = trader.auto_exit(
+                current_price
+            )
+
+            if exit_result:
+
+                st.warning(
+                    f"🛑 Paper Position Auto Closed | "
+                    f"Price: ₹{current_price:.2f}"
+                )
+
+                st.rerun()
+
+        except Exception as e:
+
+            st.error(
+                f"❌ Trailing/Auto Exit Error: {e}"
+            )
 
     trade_side = st.selectbox(
         "Trade Side",
@@ -614,6 +662,52 @@ def trading_page(
     )
 
     # =====================================================
+    # TRAILING STOPLOSS
+    # =====================================================
+
+    st.subheader("🔒 Trailing Stoploss")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        trailing_enabled = st.checkbox(
+            "Enable Trailing Stoploss",
+            value=trailing_enabled
+        )
+
+    with col2:
+        trailing_start = st.number_input(
+            "Trailing Start (Points)",
+            min_value=0.05,
+            value=float(trailing_start),
+            step=0.05
+        )
+
+    with col3:
+        trailing_distance = st.number_input(
+            "Trailing Distance (Points)",
+            min_value=0.05,
+            value=float(trailing_distance),
+            step=0.05
+        )
+
+    if trailing_enabled:
+
+        if trailing_distance >= trailing_start:
+            st.error(
+                "⚠️ Trailing Distance must be less than Trailing Start."
+            )
+        else:
+            st.success(
+                f"🟢 Trailing ON | "
+                f"Start: +{trailing_start:.2f} | "
+                f"Distance: {trailing_distance:.2f}"
+            )
+
+    else:
+        st.info("⚪ Trailing Stoploss is OFF")
+
+    # =====================================================
     # EXECUTION STATUS
     # =====================================================
 
@@ -646,6 +740,15 @@ def trading_page(
         type="primary",
         use_container_width=True
     ):
+        # -------------------------------------------------
+        # SAVE TRAILING SETTINGS
+        # -------------------------------------------------
+
+        save_settings({
+            "trailing_enabled": trailing_enabled,
+            "trailing_start": float(trailing_start),
+            "trailing_distance": float(trailing_distance)
+        })
 
         # -------------------------------------------------
         # PAPER MODE CHECK
@@ -709,7 +812,6 @@ def trading_page(
                 "Stoploss must be different "
                 "from entry price."
             )
-
         # -------------------------------------------------
         # DAILY TRADE LIMIT
         # -------------------------------------------------
@@ -718,14 +820,12 @@ def trading_page(
 
             trades = load_trades()
 
-            today = datetime.now().strftime(
-                "%Y-%m-%d"
-            )
+            today = datetime.now().strftime("%Y-%m-%d")
 
             today_trades = trades[
-                trades["Time"].astype(str).str.startswith(
-                    today
-                )
+                trades["Time"]
+                .astype(str)
+                .str.startswith(today)
             ]
 
             if len(today_trades) >= max_trades:
@@ -737,52 +837,93 @@ def trading_page(
 
             else:
 
-                trade = {
+                # =================================================
+                # PAPER TRADER EXECUTION
+                # =================================================
 
-                    "Time":
-                        datetime.now().strftime(
+                if execution_side == "BUY":
+
+                    success, message = trader.buy(
+                        symbol=selected_symbol,
+                        price=float(entry_price),
+                        qty=int(quantity),
+                        target=float(target),
+                        stoploss=float(stoploss),
+                        trailing_enabled=bool(trailing_enabled),
+                        trailing_start=float(trailing_start),
+                        trailing_distance=float(trailing_distance)
+                    )
+
+                elif execution_side == "SELL":
+
+                    success, message = trader.short(
+                        symbol=selected_symbol,
+                        price=float(entry_price),
+                        qty=int(quantity),
+                        target=float(target),
+                        stoploss=float(stoploss),
+                        trailing_enabled=bool(trailing_enabled),
+                        trailing_start=float(trailing_start),
+                        trailing_distance=float(trailing_distance)
+                    )
+
+                else:
+
+                    success = False
+                    message = "Invalid execution side."
+
+                # =================================================
+                # RESULT
+                # =================================================
+
+                if success:
+
+                    trade = {
+                        "Time": datetime.now().strftime(
                             "%Y-%m-%d %H:%M:%S"
                         ),
+                        "Symbol": selected_symbol,
+                        "Side": execution_side,
+                        "Entry": float(entry_price),
+                        "Stoploss": float(stoploss),
+                        "Target": float(target),
+                        "Quantity": int(quantity),
+                        "Status": "OPEN",
+                        "Exit": "",
+                        "P&L": 0
+                    }
 
-                    "Symbol":
-                        selected_symbol,
+                    save_trade(trade)
 
-                    "Side":
-                        execution_side,
+                    st.success(
+                        f"✅ Paper Trade Opened: "
+                        f"{execution_side} "
+                        f"{selected_symbol}"
+                    )
 
-                    "Entry":
-                        entry_price,
+                    if trailing_enabled:
 
-                    "Stoploss":
-                        stoploss,
+                        st.info(
+                            f"🔒 Trailing Stoploss ON | "
+                            f"Start: +{trailing_start:.2f} | "
+                            f"Distance: {trailing_distance:.2f}"
+                        )
 
-                    "Target":
-                        target,
+                    else:
 
-                    "Quantity":
-                        quantity,
+                        st.info(
+                            "⚪ Trailing Stoploss OFF"
+                        )
 
-                    "Status":
-                        "OPEN",
+                    st.rerun()
 
-                    "Exit":
-                        "",
+                else:
+                    st.error(
+                        f"❌ Paper Trade Failed: {message}"
+                    )
 
-                    "P&L":
-                        0
-                }
-
-                save_trade(trade)
-
-                st.success(
-                    f"✅ Paper Trade Opened: "
-                    f"{execution_side} "
-                    f"{selected_symbol}"
-                )
-
-                st.rerun()
-
-    st.divider()
+        st.divider()
+   
 
     # =====================================================
     # OPEN POSITIONS

@@ -12,6 +12,7 @@ import pandas_ta as ta
 
 def safe_float(value, default=0.0):
     try:
+
         if value is None:
             return default
 
@@ -31,6 +32,7 @@ def safe_float(value, default=0.0):
 # =========================================================
 
 def download_data(symbol, period="30d", interval="5m"):
+
     try:
 
         df = yf.download(
@@ -43,9 +45,17 @@ def download_data(symbol, period="30d", interval="5m"):
         )
 
         if df is None or df.empty:
+
+            logging.warning(
+                f"No market data returned for {symbol}"
+            )
+
             return None
 
+        # =================================================
         # Fix yfinance MultiIndex
+        # =================================================
+
         if isinstance(df.columns, pd.MultiIndex):
 
             df.columns = [
@@ -55,10 +65,20 @@ def download_data(symbol, period="30d", interval="5m"):
                 for column in df.columns
             ]
 
-        # Remove duplicate columns
-        df = df.loc[:, ~df.columns.duplicated()]
+        # =================================================
+        # Remove Duplicate Columns
+        # =================================================
 
-        required = [
+        df = df.loc[
+            :,
+            ~df.columns.duplicated()
+        ]
+
+        # =================================================
+        # Required Columns
+        # =================================================
+
+        required_columns = [
             "Open",
             "High",
             "Low",
@@ -66,35 +86,58 @@ def download_data(symbol, period="30d", interval="5m"):
             "Volume"
         ]
 
-        for column in required:
+        for column in required_columns:
 
             if column not in df.columns:
+
                 logging.warning(
                     f"Missing column {column} for {symbol}"
                 )
+
                 return None
 
-        df = df[required].copy()
+        # =================================================
+        # Keep Required Columns Only
+        # =================================================
 
-        for column in required:
+        df = df[
+            required_columns
+        ].copy()
+
+        # =================================================
+        # Convert Numeric
+        # =================================================
+
+        for column in required_columns:
+
             df[column] = pd.to_numeric(
                 df[column],
                 errors="coerce"
             )
 
+        # =================================================
+        # Remove Invalid OHLC Rows
+        # =================================================
+
         df.dropna(
-            subset=["Open", "High", "Low", "Close"],
+            subset=[
+                "Open",
+                "High",
+                "Low",
+                "Close"
+            ],
             inplace=True
         )
 
         if df.empty:
+
             return None
 
         return df
 
     except Exception as e:
 
-        logging.error(
+        logging.exception(
             f"Data download error for {symbol}: {e}"
         )
 
@@ -109,6 +152,10 @@ def get_signals(symbol):
 
     try:
 
+        # =================================================
+        # Download Data
+        # =================================================
+
         df = download_data(
             symbol,
             period="30d",
@@ -118,8 +165,13 @@ def get_signals(symbol):
         if df is None or df.empty:
 
             return {
-                "error": f"No market data available for {symbol}"
+                "error":
+                    f"No market data available for {symbol}"
             }
+
+        # =================================================
+        # OHLCV
+        # =================================================
 
         close = df["Close"]
         high = df["High"]
@@ -127,13 +179,17 @@ def get_signals(symbol):
         volume = df["Volume"]
 
         # =================================================
-        # EMA
+        # EMA 9
         # =================================================
 
         df["EMA9"] = ta.ema(
             close,
             length=9
         )
+
+        # =================================================
+        # EMA 21
+        # =================================================
 
         df["EMA21"] = ta.ema(
             close,
@@ -162,47 +218,103 @@ def get_signals(symbol):
 
         if macd is not None and not macd.empty:
 
-            macd_columns = list(macd.columns)
+            macd_columns = list(
+                macd.columns
+            )
 
-            # pandas_ta normally returns:
-            # MACD_12_26_9
-            # MACDh_12_26_9
-            # MACDs_12_26_9
+            # -------------------------------------------------
+            # MACD Main
+            # -------------------------------------------------
 
             macd_main = next(
                 (
-                    c for c in macd_columns
-                    if str(c).startswith("MACD_")
-                    and not str(c).startswith("MACDh")
-                    and not str(c).startswith("MACDs")
+                    column
+                    for column in macd_columns
+                    if str(column).startswith("MACD_")
+                    and not str(column).startswith("MACDh")
+                    and not str(column).startswith("MACDs")
                 ),
                 None
             )
+
+            # -------------------------------------------------
+            # MACD Signal
+            # -------------------------------------------------
 
             macd_signal_column = next(
                 (
-                    c for c in macd_columns
-                    if str(c).startswith("MACDs")
+                    column
+                    for column in macd_columns
+                    if str(column).startswith("MACDs")
                 ),
                 None
             )
 
+            # -------------------------------------------------
+            # MACD Histogram
+            # -------------------------------------------------
+
+            macd_hist_column = next(
+                (
+                    column
+                    for column in macd_columns
+                    if str(column).startswith("MACDh")
+                ),
+                None
+            )
+
+            # -------------------------------------------------
+            # Assign MACD
+            # -------------------------------------------------
+
             if macd_main is not None:
-                df["MACD"] = macd[macd_main]
+
+                df["MACD"] = macd[
+                    macd_main
+                ]
+
             else:
+
                 df["MACD"] = 0.0
 
+            # -------------------------------------------------
+            # Assign MACD Signal
+            # -------------------------------------------------
+
             if macd_signal_column is not None:
+
                 df["MACD_SIGNAL"] = macd[
                     macd_signal_column
                 ]
+
             else:
+
                 df["MACD_SIGNAL"] = 0.0
+
+            # -------------------------------------------------
+            # Assign MACD Histogram
+            # -------------------------------------------------
+
+            if macd_hist_column is not None:
+
+                df["MACD_HIST"] = macd[
+                    macd_hist_column
+                ]
+
+            else:
+
+                df["MACD_HIST"] = (
+                    df["MACD"]
+                    - df["MACD_SIGNAL"]
+                )
 
         else:
 
             df["MACD"] = 0.0
+
             df["MACD_SIGNAL"] = 0.0
+
+            df["MACD_HIST"] = 0.0
 
         # =================================================
         # SuperTrend
@@ -216,45 +328,70 @@ def get_signals(symbol):
             multiplier=3.0
         )
 
-        if supertrend is not None and not supertrend.empty:
+        if (
+            supertrend is not None
+            and not supertrend.empty
+        ):
 
             st_columns = list(
                 supertrend.columns
             )
 
+            # -------------------------------------------------
+            # Direction Column
+            # -------------------------------------------------
+
             direction_column = next(
                 (
-                    c for c in st_columns
-                    if str(c).startswith("SUPERTd")
+                    column
+                    for column in st_columns
+                    if str(column).startswith("SUPERTd")
                 ),
                 None
             )
 
+            # -------------------------------------------------
+            # SuperTrend Value Column
+            # -------------------------------------------------
+
             value_column = next(
                 (
-                    c for c in st_columns
-                    if str(c).startswith("SUPERT_")
-                    and not str(c).startswith("SUPERTd")
-                    and not str(c).startswith("SUPERTl")
-                    and not str(c).startswith("SUPERTs")
+                    column
+                    for column in st_columns
+                    if str(column).startswith("SUPERT_")
+                    and not str(column).startswith("SUPERTd")
+                    and not str(column).startswith("SUPERTl")
+                    and not str(column).startswith("SUPERTs")
                 ),
                 None
             )
+
+            # -------------------------------------------------
+            # Direction
+            # -------------------------------------------------
 
             if direction_column is not None:
 
                 df["ST_DIRECTION"] = (
-                    supertrend[direction_column]
+                    supertrend[
+                        direction_column
+                    ]
                 )
 
             else:
 
-                df["ST_DIRECTION"] = 0
+                df["ST_DIRECTION"] = 0.0
+
+            # -------------------------------------------------
+            # SuperTrend Value
+            # -------------------------------------------------
 
             if value_column is not None:
 
                 df["SUPERTREND"] = (
-                    supertrend[value_column]
+                    supertrend[
+                        value_column
+                    ]
                 )
 
             else:
@@ -263,7 +400,8 @@ def get_signals(symbol):
 
         else:
 
-            df["ST_DIRECTION"] = 0
+            df["ST_DIRECTION"] = 0.0
+
             df["SUPERTREND"] = close
 
         # =================================================
@@ -274,33 +412,78 @@ def get_signals(symbol):
             volume
             .rolling(
                 window=20,
-                min_periods=1
+                min_periods=20
             )
             .mean()
         )
 
         # =================================================
-        # Remove incomplete indicator rows
+        # Remove Incomplete Indicator Rows
         # =================================================
 
+        indicator_columns = [
+            "EMA9",
+            "EMA21",
+            "RSI",
+            "MACD",
+            "MACD_SIGNAL",
+            "ST_DIRECTION",
+            "SUPERTREND",
+            "AVG_VOLUME"
+        ]
+
         df = df.dropna(
-            subset=[
-                "EMA9",
-                "EMA21",
-                "RSI"
-            ]
+            subset=indicator_columns
         )
 
         if df.empty:
 
             return {
-                "error": "Indicators could not be calculated"
+                "error":
+                    "Indicators could not be calculated"
             }
+
+        if len(df) < 2:
+
+            return {
+                "error":
+                    "Insufficient candles for signal calculation"
+            }
+
+        # =================================================
+        # Latest Candle
+        # =================================================
 
         latest = df.iloc[-1]
 
+        previous = df.iloc[-2]
+
         # =================================================
-        # Latest Values
+        # Current OHLC
+        # =================================================
+
+        current_open = safe_float(
+            latest.get("Open")
+        )
+
+        current_high = safe_float(
+            latest.get("High")
+        )
+
+        current_low = safe_float(
+            latest.get("Low")
+        )
+
+        current_close = safe_float(
+            latest.get("Close")
+        )
+
+        current_volume = safe_float(
+            latest.get("Volume")
+        )
+
+        # =================================================
+        # Indicator Values
         # =================================================
 
         ema9 = safe_float(
@@ -323,41 +506,51 @@ def get_signals(symbol):
             latest.get("MACD_SIGNAL")
         )
 
+        macd_hist = safe_float(
+            latest.get("MACD_HIST")
+        )
+
         st_direction = safe_float(
             latest.get("ST_DIRECTION"),
-            0
+            0.0
         )
 
         supertrend_value = safe_float(
-            latest.get("SUPERTREND")
-        )
-
-        current_volume = safe_float(
-            latest.get("Volume")
+            latest.get("SUPERTREND"),
+            current_close
         )
 
         average_volume = safe_float(
             latest.get("AVG_VOLUME")
         )
 
-        current_close = safe_float(
-            latest.get("Close")
+        # =================================================
+        # Previous Candle Values
+        # =================================================
+
+        previous_ema9 = safe_float(
+            previous.get("EMA9")
         )
 
-        current_open = safe_float(
-            latest.get("Open")
+        previous_ema21 = safe_float(
+            previous.get("EMA21")
         )
 
-        current_high = safe_float(
-            latest.get("High")
+        previous_macd = safe_float(
+            previous.get("MACD")
         )
 
-        current_low = safe_float(
-            latest.get("Low")
+        previous_macd_signal = safe_float(
+            previous.get("MACD_SIGNAL")
+        )
+
+        previous_st_direction = safe_float(
+            previous.get("ST_DIRECTION"),
+            0.0
         )
 
         # =================================================
-        # Individual Signals
+        # EMA Signal
         # =================================================
 
         if ema9 > ema21:
@@ -372,12 +565,29 @@ def get_signals(symbol):
 
             ema_signal = "HOLD"
 
+        # =================================================
+        # EMA Crossover
+        # =================================================
 
-        if rsi > 55:
+        bullish_crossover = (
+            previous_ema9 <= previous_ema21
+            and ema9 > ema21
+        )
+
+        bearish_crossover = (
+            previous_ema9 >= previous_ema21
+            and ema9 < ema21
+        )
+
+        # =================================================
+        # RSI Signal
+        # =================================================
+
+        if rsi > 55 and rsi < 70:
 
             rsi_signal = "BUY"
 
-        elif rsi < 45:
+        elif rsi < 45 and rsi > 30:
 
             rsi_signal = "SELL"
 
@@ -385,19 +595,9 @@ def get_signals(symbol):
 
             rsi_signal = "HOLD"
 
-
-        if st_direction > 0:
-
-            st_signal = "BUY"
-
-        elif st_direction < 0:
-
-            st_signal = "SELL"
-
-        else:
-
-            st_signal = "HOLD"
-
+        # =================================================
+        # MACD Signal
+        # =================================================
 
         if macd_value > macd_signal_value:
 
@@ -411,64 +611,152 @@ def get_signals(symbol):
 
             macd_signal_name = "HOLD"
 
+        # =================================================
+        # MACD Crossover
+        # =================================================
+
+        bullish_macd_crossover = (
+            previous_macd <= previous_macd_signal
+            and macd_value > macd_signal_value
+        )
+
+        bearish_macd_crossover = (
+            previous_macd >= previous_macd_signal
+            and macd_value < macd_signal_value
+        )
 
         # =================================================
-        # Volume Confirmation
+        # SuperTrend Signal
+        # =================================================
+
+        if st_direction > 0:
+
+            st_signal = "BUY"
+
+        elif st_direction < 0:
+
+            st_signal = "SELL"
+
+        else:
+
+            st_signal = "HOLD"
+
+        # =================================================
+        # SuperTrend Flip
+        # =================================================
+
+        bullish_st_flip = (
+            previous_st_direction <= 0
+            and st_direction > 0
+        )
+
+        bearish_st_flip = (
+            previous_st_direction >= 0
+            and st_direction < 0
+        )
+
+        # =================================================
+        # Volume Ratio
         # =================================================
 
         if average_volume > 0:
 
             volume_ratio = (
-                current_volume /
-                average_volume
+                current_volume
+                / average_volume
             )
 
         else:
 
             volume_ratio = 0.0
 
+        # =================================================
+        # Volume Confirmation
+        # =================================================
 
         volume_confirmation = (
             volume_ratio >= 1.20
         )
 
+        # =================================================
+        # Price vs SuperTrend
+        # =================================================
+
+        price_above_supertrend = (
+            current_close > supertrend_value
+        )
+
+        price_below_supertrend = (
+            current_close < supertrend_value
+        )
+
+        # =================================================
+        # Individual Signal Score
+        # =================================================
+
+        buy_count = 0
+
+        sell_count = 0
+
+        # EMA
+        if ema_signal == "BUY":
+            buy_count += 1
+
+        elif ema_signal == "SELL":
+            sell_count += 1
+
+        # RSI
+        if rsi_signal == "BUY":
+            buy_count += 1
+
+        elif rsi_signal == "SELL":
+            sell_count += 1
+
+        # MACD
+        if macd_signal_name == "BUY":
+            buy_count += 1
+
+        elif macd_signal_name == "SELL":
+            sell_count += 1
+
+        # SuperTrend
+        if st_signal == "BUY":
+            buy_count += 1
+
+        elif st_signal == "SELL":
+            sell_count += 1
 
         # =================================================
         # Combined Signal
         # =================================================
 
-        buy_count = sum(
-            [
-                ema_signal == "BUY",
-                rsi_signal == "BUY",
-                st_signal == "BUY",
-                macd_signal_name == "BUY"
-            ]
-        )
-
-        sell_count = sum(
-            [
-                ema_signal == "SELL",
-                rsi_signal == "SELL",
-                st_signal == "SELL",
-                macd_signal_name == "SELL"
-            ]
-        )
-
-
-        if buy_count >= 3 and volume_confirmation:
+        if (
+            buy_count >= 3
+            and volume_confirmation
+            and price_above_supertrend
+        ):
 
             combined_signal = "BUY"
 
-        elif sell_count >= 3 and volume_confirmation:
+        elif (
+            sell_count >= 3
+            and volume_confirmation
+            and price_below_supertrend
+        ):
 
             combined_signal = "SELL"
 
-        elif buy_count >= 3:
+        elif (
+            buy_count >= 3
+            and price_above_supertrend
+        ):
 
             combined_signal = "BUY"
 
-        elif sell_count >= 3:
+        elif (
+            sell_count >= 3
+            and price_below_supertrend
+        ):
 
             combined_signal = "SELL"
 
@@ -476,51 +764,236 @@ def get_signals(symbol):
 
             combined_signal = "HOLD"
 
+        # =================================================
+        # Signal Strength
+        # =================================================
+
+        buy_strength = (
+            buy_count / 4
+        ) * 100
+
+        sell_strength = (
+            sell_count / 4
+        ) * 100
+
+        if volume_confirmation:
+
+            if combined_signal == "BUY":
+
+                buy_strength += 10
+
+            elif combined_signal == "SELL":
+
+                sell_strength += 10
+
+        if price_above_supertrend:
+
+            buy_strength += 10
+
+        elif price_below_supertrend:
+
+            sell_strength += 10
+
+        buy_strength = min(
+            round(buy_strength),
+            100
+        )
+
+        sell_strength = min(
+            round(sell_strength),
+            100
+        )
+
+        if combined_signal == "BUY":
+
+            signal_strength = buy_strength
+
+        elif combined_signal == "SELL":
+
+            signal_strength = sell_strength
+
+        else:
+
+            signal_strength = max(
+                buy_strength,
+                sell_strength
+            )
 
         # =================================================
-        # Return
+        # Signal Type
+        # =================================================
+
+        if bullish_crossover:
+
+            signal_type = "EMA_BULLISH_CROSS"
+
+        elif bearish_crossover:
+
+            signal_type = "EMA_BEARISH_CROSS"
+
+        elif bullish_macd_crossover:
+
+            signal_type = "MACD_BULLISH_CROSS"
+
+        elif bearish_macd_crossover:
+
+            signal_type = "MACD_BEARISH_CROSS"
+
+        elif bullish_st_flip:
+
+            signal_type = "SUPERTREND_BULLISH_FLIP"
+
+        elif bearish_st_flip:
+
+            signal_type = "SUPERTREND_BEARISH_FLIP"
+
+        else:
+
+            signal_type = "TREND_CONTINUATION"
+
+        # =================================================
+        # Final Result
         # =================================================
 
         return {
 
+            # -------------------------------------------------
+            # Basic
+            # -------------------------------------------------
+
             "Symbol": symbol,
 
-            "Close": current_close,
+            "SIGNAL": combined_signal,
+
+            "Signal": combined_signal,
+
+            "Signal_Strength": signal_strength,
+
+            "Signal_Type": signal_type,
+
+            "Timestamp": str(
+                df.index[-1]
+            ),
+
+            # -------------------------------------------------
+            # OHLC
+            # -------------------------------------------------
+
             "Open": current_open,
+
             "High": current_high,
+
             "Low": current_low,
 
+            "Close": current_close,
+
+            "Price": current_close,
+
+            # -------------------------------------------------
+            # Volume
+            # -------------------------------------------------
+
             "Volume": current_volume,
+
             "AVG_VOLUME": average_volume,
+
             "Volume_Ratio": round(
                 volume_ratio,
                 2
             ),
 
-            "EMA9": ema9,
-            "EMA21": ema21,
-
-            "RSI": rsi,
-
-            "MACD": macd_value,
-            "MACD_SIGNAL": macd_signal_value,
-
-            "SUPERTREND": st_direction,
-            "SUPERTREND_VALUE": supertrend_value,
-            "ST_DIRECTION": st_direction,
-
-            "EMA_SIGNAL": ema_signal,
-            "RSI_SIGNAL": rsi_signal,
-            "SUPERTREND_SIGNAL": st_signal,
-            "MACD_SIGNAL_NAME": macd_signal_name,
-
             "VOLUME_CONFIRMATION":
                 volume_confirmation,
 
-            "SIGNAL":
-                combined_signal
-        }
+            # -------------------------------------------------
+            # EMA
+            # -------------------------------------------------
 
+            "EMA9": ema9,
+
+            "EMA21": ema21,
+
+            "EMA_SIGNAL":
+                ema_signal,
+
+            "EMA_BULLISH_CROSS":
+                bullish_crossover,
+
+            "EMA_BEARISH_CROSS":
+                bearish_crossover,
+
+            # -------------------------------------------------
+            # RSI
+            # -------------------------------------------------
+
+            "RSI": rsi,
+
+            "RSI_SIGNAL":
+                rsi_signal,
+
+            # -------------------------------------------------
+            # MACD
+            # -------------------------------------------------
+
+            "MACD": macd_value,
+
+            "MACD_SIGNAL":
+                macd_signal_value,
+
+            "MACD_HIST":
+                macd_hist,
+
+            "MACD_SIGNAL_NAME":
+                macd_signal_name,
+
+            "MACD_BULLISH_CROSS":
+                bullish_macd_crossover,
+
+            "MACD_BEARISH_CROSS":
+                bearish_macd_crossover,
+
+            # -------------------------------------------------
+            # SuperTrend
+            # -------------------------------------------------
+
+            "SUPERTREND":
+                supertrend_value,
+
+            "SUPERTREND_VALUE":
+                supertrend_value,
+
+            "ST_DIRECTION":
+                st_direction,
+
+            "SUPERTREND_SIGNAL":
+                st_signal,
+
+            "SUPERTREND_BULLISH_FLIP":
+                bullish_st_flip,
+
+            "SUPERTREND_BEARISH_FLIP":
+                bearish_st_flip,
+
+            # -------------------------------------------------
+            # Price Confirmation
+            # -------------------------------------------------
+
+            "PRICE_ABOVE_SUPERTREND":
+                price_above_supertrend,
+
+            "PRICE_BELOW_SUPERTREND":
+                price_below_supertrend,
+
+            # -------------------------------------------------
+            # Signal Counts
+            # -------------------------------------------------
+
+            "BUY_COUNT":
+                buy_count,
+
+            "SELL_COUNT":
+                sell_count
+        }
 
     except Exception as e:
 
@@ -529,6 +1002,6 @@ def get_signals(symbol):
         )
 
         return {
-            "error": str(e)
+            "error": str(e),
+            "Symbol": symbol
         }
-

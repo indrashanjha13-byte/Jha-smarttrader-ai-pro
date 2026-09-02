@@ -13,6 +13,7 @@ from streamlit_autorefresh import st_autorefresh
 from signals import get_signals
 
 from paper_trading import PaperTrader
+from trade_manager import TradeManager
 from backtest_engine import BacktestEngine
 
 from ai_decision import ai_decision
@@ -36,6 +37,7 @@ from pages.market_page import market_page
 from pages.portfolio_page import portfolio_page
 from pages.reports_page import reports_page
 from pages.settings_page import settings_page
+from delta_futures import DeltaFutures
 
 # IMPORTANT:
 # trading_page must contain function named trading_page
@@ -108,6 +110,21 @@ if "trader" not in st.session_state:
 
 trader = st.session_state.trader
 
+# =========================
+# Trade Manager
+# =========================
+
+if "trade_manager" not in st.session_state:
+
+    st.session_state.trade_manager = TradeManager(
+        paper_trader=trader
+    )
+
+trade_manager = st.session_state.trade_manager
+
+# Always make sure the same PaperTrader is connected
+trade_manager.set_paper_trader(trader)
+
 
 if "backtester" not in st.session_state:
     st.session_state.backtester = BacktestEngine()
@@ -127,6 +144,35 @@ try:
 
 except Exception:
     settings = {}
+    
+# =========================
+# Trailing Stoploss Settings
+# =========================
+
+trailing_enabled = settings.get(
+    "trailing_enabled",
+    False
+)
+
+trailing_start = float(
+    settings.get(
+        "trailing_start",
+        10
+    )
+)
+
+trailing_distance = float(
+    settings.get(
+        "trailing_distance",
+        5
+    )
+)
+
+trade_manager.set_trailing_settings(
+    enabled=trailing_enabled,
+    start=trailing_start,
+    distance=trailing_distance
+)
 
 
 # =========================
@@ -293,59 +339,264 @@ if strategy_name == "AI Combo":
 
 
 # =========================
+# Market Settings
+# =========================
+
+market_types = [
+    "OPTIONS",
+    "FUTURES"
+]
+
+default_market = settings.get(
+    "market_type",
+    "OPTIONS"
+)
+
+if default_market not in market_types:
+    default_market = "OPTIONS"
+
+
+market_type = st.sidebar.selectbox(
+    "Market",
+    market_types,
+    index=market_types.index(default_market)
+)
+
+
+# =========================
 # Option Settings
 # =========================
 
-options = [
-    "CE",
-    "PE"
-]
+if market_type == "OPTIONS":
 
-default_option = settings.get(
-    "option",
-    "CE"
-)
+    options = [
+        "CE",
+        "PE",
+        "ALL"
+    ]
 
-if default_option not in options:
-    default_option = "CE"
+    default_option = settings.get(
+        "option",
+        "CE"
+    )
 
-
-option_side = st.sidebar.selectbox(
-    "Option",
-    options,
-    index=options.index(default_option)
-)
+    if default_option not in options:
+        default_option = "CE"
 
 
-strikes = [
-    "ITM",
-    "ATM",
-    "OTM"
-]
-
-default_strike = settings.get(
-    "strike",
-    "ATM"
-)
-
-if default_strike not in strikes:
-    default_strike = "ATM"
+    option_side = st.sidebar.selectbox(
+        "Option",
+        options,
+        index=options.index(default_option)
+    )
 
 
-strike_mode = st.sidebar.selectbox(
-    "Strike",
-    strikes,
-    index=strikes.index(default_strike)
-)
+    strikes = [
+        "ITM",
+        "ATM",
+        "OTM"
+    ]
+
+    default_strike = settings.get(
+        "strike",
+        "ATM"
+    )
+
+    if default_strike not in strikes:
+        default_strike = "ATM"
 
 
+    strike_mode = st.sidebar.selectbox(
+        "Strike",
+        strikes,
+        index=strikes.index(default_strike)
+    )
+
+
+# =========================
+# Delta Futures Settings
+# =========================
+
+else:
+
+    try:
+
+        delta = DeltaFutures()
+
+        futures_data = delta.get_futures()
+
+        futures_symbols = []
+
+        for product in futures_data:
+
+            symbol = product.get("symbol")
+
+            contract_type = str(
+                product.get(
+                    "contract_type",
+                    ""
+                )
+            ).lower()
+
+            if (
+                symbol
+                and contract_type in (
+                    "futures",
+                    "perpetual_futures"
+                )
+            ):
+                futures_symbols.append(
+                    str(symbol).strip().upper()
+                )
+
+        # Remove duplicates
+        futures_symbols = sorted(
+            list(set(futures_symbols))
+        )
+
+        if not futures_symbols:
+
+            st.sidebar.warning(
+                "⚠️ No Delta Futures contracts found."
+            )
+
+    except Exception as e:
+
+        futures_symbols = []
+
+        st.sidebar.error(
+            f"Delta Futures Error: {e}"
+        )
+
+    # =========================
+    # Fallback
+    # =========================
+
+    if not futures_symbols:
+
+        futures_symbols = [
+            "BTCUSD",
+            "ETHUSD"
+        ]
+
+
+    # =========================
+    # Default Futures
+    # =========================
+
+    default_futures = settings.get(
+        "futures_symbol",
+        futures_symbols[0]
+    )
+
+    if default_futures not in futures_symbols:
+
+        default_futures = (
+            futures_symbols[0]
+        )
+
+
+    # =========================
+    # Futures Selector
+    # =========================
+
+    futures_symbol = st.sidebar.selectbox(
+        "Delta Futures",
+        futures_symbols,
+        index=futures_symbols.index(
+            default_futures
+        )
+    )
+
+
+    # Options are not used
+    option_side = "N/A"
+    strike_mode = "N/A"
+
+# =========================
+# Futures Live Price
+# =========================
+
+if market_type == "FUTURES":
+
+    try:
+
+        delta = DeltaFutures()
+
+        # Make sure the selected symbol is clean
+        futures_symbol = str(
+            futures_symbol
+        ).strip().upper()
+
+        ticker = delta.get_ticker(
+            futures_symbol
+        )
+
+        if ticker:
+
+            current_price = float(
+                ticker.get(
+                    "mark_price",
+                    ticker.get(
+                        "close",
+                        ticker.get(
+                            "last_price",
+                            0
+                        )
+                    )
+                ) or 0
+            )
+
+            if current_price > 0:
+
+                st.sidebar.success(
+                    f"💰 {futures_symbol} "
+                    f"Price: {current_price:,.2f}"
+                )
+
+            else:
+
+                st.sidebar.warning(
+                    f"⚠️ {futures_symbol} "
+                    "ticker received but price is 0"
+                )
+
+        else:
+
+            current_price = 0.0
+
+            st.sidebar.warning(
+                f"⚠️ No market data available "
+                f"for {futures_symbol}"
+            )
+
+    except Exception as e:
+
+        current_price = 0.0
+
+        st.sidebar.error(
+            f"Delta Price Error: {e}"
+        )
 # =========================
 # Auto Trading Status
 # =========================
 
+trading_mode = str(
+    settings.get(
+        "trading_mode",
+        "PAPER"
+    )
+).upper()
+
 try:
 
-    if is_enabled():
+    if trading_mode == "PAPER":
+
+        st.sidebar.success(
+            "🤖 AUTO PAPER TRADING : ON"
+        )
+
+    elif is_enabled():
 
         st.sidebar.success(
             "🤖 AUTO TRADING : ON"
@@ -362,7 +613,6 @@ except Exception:
     st.sidebar.info(
         "🤖 AUTO TRADING : OFF"
     )
-
 
 # =========================================================
 # DASHBOARD

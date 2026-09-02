@@ -13,7 +13,7 @@ SETTINGS_FILE = "settings.json"
 DEFAULT_SETTINGS = {
     "symbol": "^NSEI",
     "strategy": "AI Combo",
-    "option": "CE",
+    "option": "ALL",
     "strike": "ATM",
 
     # Trading Mode
@@ -33,9 +33,14 @@ DEFAULT_SETTINGS = {
     "target_rr": 2.0,
 
     # Position
-    "lot_size": 1
+    "lot_size": 1,
+    
+    # Trailing Stoploss
+    "trailing_enabled": False,
+    "trailing_start": 10.0,
+    "trailing_distance": 5.0
 }
-
+   
 
 # =========================================================
 # LOAD SETTINGS
