@@ -100,28 +100,39 @@ try:
 except Exception:
     pass
 
-#============================================
-#    Session State
-#============================================
+# ============================================
+# Session State
+# ============================================
 
+# Paper Trader
 if "trader" not in st.session_state:
     st.session_state.trader = PaperTrader(
         initial_balance=100000
     )
-    trader = st.session_state.trader
+
+trader = st.session_state.trader
 
 
+# Trade Manager
 if "trade_manager" not in st.session_state:
-    st.session_state.manager = TradeManager(
+    st.session_state.trade_manager = TradeManager(
         paper_trader=trader
     )
-trade_manager = st.session_state.manager
-trade_manager.set_paper_trader(trader)
 
+trade_manager = st.session_state.trade_manager
+
+# Ensure PaperTrader is connected
+try:
+    trade_manager.set_paper_trader(trader)
+except Exception:
+    pass
+
+
+# Backtester
 if "backtester" not in st.session_state:
     st.session_state.backtester = BacktestEngine()
-    backtester = st.session_state.backtester
 
+backtester = st.session_state.backtester
 # =========================
 # Settings
 # =========================
