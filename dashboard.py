@@ -429,25 +429,30 @@ else:
 
         for product in futures_data:
 
-            symbol = product.get("symbol")
+            futures_contract_symbol = product.get(
+                "symbol"
+            )
 
             contract_type = str(
                 product.get(
                     "contract_type",
-                    ""
-                )
-            ).lower()
+                ""
+            )
+        ).lower()
 
-            if (
-                symbol
-                and contract_type in (
-                    "futures",
-                    "perpetual_futures"
-                )
-            ):
-                futures_symbols.append(
-                    str(symbol).strip().upper()
-                )
+        if (
+            futures_contract_symbol
+            and contract_type in (
+                "futures",
+                "perpetual_futures"
+            )
+        ):
+
+            futures_symbols.append(
+                str(
+                    futures_contract_symbol
+                ).strip().upper()
+            )
 
         # Remove duplicates
         futures_symbols = sorted(
@@ -657,15 +662,27 @@ else:
 
 if page == "🏠 Dashboard":
 
-    try:
+    # =========================================================
+    # DASHBOARD SIGNAL DATA
+    # =========================================================
 
-        signal_data = get_signals(symbol)
+    if market_type == "FUTURES":
 
-    except Exception as e:
+        signal_data = {}
 
-        signal_data = {
-            "error": str(e)
-        }
+    else:
+
+        try:
+
+            signal_data = get_signals(
+                symbol
+            )
+
+        except Exception as e:
+
+            signal_data = {
+                "error": str(e)
+            }
 
 
     if not isinstance(signal_data, dict):

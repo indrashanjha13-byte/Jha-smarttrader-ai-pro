@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import os
+import logging
 
 from signals import get_signals
 from settings_manager import load_settings, save_settings
@@ -202,7 +203,112 @@ def calculate_pnl(
     except Exception:
 
         return 0.0
+# =========================================================
+# AUTO EXIT CSV SYNC
+# =========================================================
 
+def sync_auto_exit_to_paper_trades(
+    position,
+    exit_price
+):
+    """
+    Sync PaperTrader auto-exit with paper_trades.csv.
+    Finds the matching OPEN trade and marks it CLOSED.
+    """
+
+    try:
+
+        if not position:
+            return False
+
+        trades = load_trades()
+
+        if trades.empty:
+            return False
+
+        symbol = str(
+            position.get("symbol", "")
+        )
+
+        side = str(
+            position.get("side", "")
+        ).upper()
+
+        entry = float(
+            position.get("entry", 0)
+        )
+
+        qty = int(
+            position.get("qty", 0)
+        )
+
+        exit_price = float(exit_price)
+
+        # Find matching OPEN trade
+        matching = trades[
+            (trades["Status"].astype(str).str.upper() == "OPEN")
+            & (trades["Symbol"].astype(str) == symbol)
+            & (trades["Side"].astype(str).str.upper() == side)
+        ]
+
+        if matching.empty:
+            return False
+
+        # Match entry
+        matching = matching[
+            pd.to_numeric(
+                matching["Entry"],
+                errors="coerce"
+            ).round(4) == round(entry, 4)
+        ]
+
+        # Match quantity
+        matching = matching[
+            pd.to_numeric(
+                matching["Quantity"],
+                errors="coerce"
+            ).fillna(0).astype(int) == qty
+        ]
+
+        if matching.empty:
+            return False
+
+        # Latest matching OPEN trade
+        row_index = matching.index[-1]
+
+        pnl = calculate_pnl(
+            side,
+            entry,
+            exit_price,
+            qty
+        )
+
+        # Update CSV row
+        trades.at[row_index, "Status"] = "CLOSED"
+        trades.at[row_index, "Exit"] = exit_price
+        trades.at[row_index, "P&L"] = pnl
+
+        # Save current active SL
+        if "stoploss" in position:
+
+            trades.at[row_index, "Stoploss"] = float(
+                position["stoploss"]
+            )
+
+        trades.to_csv(
+            TRADE_FILE,
+            index=False
+        )
+
+        return True
+
+    except Exception as e:
+
+        logging.error(
+            f"Auto exit CSV sync error: {e}"
+        )
+
+        return False
 
 # =========================================================
 # TRADING PAGE
@@ -618,9 +724,9 @@ def trading_page(
         step=0.05
     )
 
-    # =====================================================
-    # PAPER TRADER AUTO EXIT / TRAILING UPDATE
-    # =====================================================
+   # =========================================================
+   # PAPER AUTO EXIT
+   # =========================================================
 
     if (
         trader is not None
@@ -630,16 +736,37 @@ def trading_page(
 
         try:
 
+            # Save position BEFORE auto_exit clears it
+            position_before_exit = dict(
+                trader.position
+            )
+
             exit_result = trader.auto_exit(
                 current_price
             )
 
             if exit_result:
 
-                st.warning(
-                    f"🛑 Paper Position Auto Closed | "
-                    f"Price: ₹{current_price:.2f}"
+                # Sync auto-exit with paper_trades.csv
+                synced = sync_auto_exit_to_paper_trades(
+                    position_before_exit,
+                    current_price
                 )
+
+                if synced:
+
+                    st.success(
+                        f"🛑 Paper Position Auto Closed | "
+                        f"Price: ₹{current_price:.2f}"
+                    )
+
+                else:
+
+                    st.warning(
+                        f"🛑 Paper Position Auto Closed | "
+                        f"CSV Sync Not Found | "
+                        f"Price: ₹{current_price:.2f}"
+                    )
 
                 st.rerun()
 
@@ -648,7 +775,7 @@ def trading_page(
             st.error(
                 f"❌ Trailing/Auto Exit Error: {e}"
             )
-
+            
     # =====================================================
     # TRADE SIDE
     # =====================================================

@@ -297,8 +297,18 @@ def market_page(
             volume=data["Volume"],
             avg_volume=data["AVG_VOLUME"]
         )
-        live_alerts(trader, current_price, decision.get("decision", "HOLD"))
-    else:
-        st.error(f"Signal Error: {data['error']}")
 
+        live_alerts(
+            trader,
+            current_price,
+            decision.get(
+                "decision",
+                "HOLD"
+            )
+        )
+
+    else:
+        st.error(
+            f"Signal Error: {data['error']}"
+        )
     st.divider()
