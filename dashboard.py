@@ -21,7 +21,11 @@ from ai_decision import ai_decision
 from ai_learning import auto_strategy
 from market_memory import best_market_strategy
 
-from auto_mode import is_enabled
+from auto_mode import (
+    is_enabled,
+    enable_auto,
+    disable_auto
+)
 
 from option_chain import scan_all_option_chain
 from fo_symbols import INDICES, FO_STOCKS
@@ -39,12 +43,7 @@ from pages.reports_page import reports_page
 from pages.settings_page import settings_page
 from delta_futures import DeltaFutures
 
-# IMPORTANT:
-# trading_page must contain function named trading_page
-try:
-    from pages.trading_page import trading_page
-except ImportError:
-    trading_page = None
+from pages.trading_page import trading_page
 
 
 # =========================
@@ -578,41 +577,78 @@ if market_type == "FUTURES":
         st.sidebar.error(
             f"Delta Price Error: {e}"
         )
+
 # =========================
-# Auto Trading Status
+# Trading Mode
 # =========================
 
-trading_mode = str(
-    settings.get(
-        "trading_mode",
-        "PAPER"
+st.sidebar.divider()
+st.sidebar.subheader("🤖 Trading Mode")
+
+
+# -------------------------
+# Paper Trading
+# -------------------------
+
+paper_trading = st.sidebar.toggle(
+    "🟢 Paper Trading",
+    value=not is_enabled(),
+    key="paper_trading_switch"
+)
+
+
+# -------------------------
+# Live Auto Trading
+# -------------------------
+
+live_auto_trading = st.sidebar.toggle(
+    "🔴 Live Auto Trading",
+    value=is_enabled(),
+    key="live_auto_trading_switch"
+)
+
+
+# =========================
+# Mode Control
+# =========================
+
+if live_auto_trading:
+
+    enable_auto()
+
+    st.sidebar.warning(
+        "⚠️ LIVE AUTO TRADING : ON"
     )
-).upper()
 
-try:
+    live_confirm = st.sidebar.checkbox(
+        "I confirm real orders can be placed",
+        key="live_trade_confirmation"
+    )
 
-    if trading_mode == "PAPER":
+    if not live_confirm:
 
-        st.sidebar.success(
-            "🤖 AUTO PAPER TRADING : ON"
+        disable_auto()
+
+        st.sidebar.error(
+            "🔒 Live trading locked — confirmation required"
         )
 
-    elif is_enabled():
 
-        st.sidebar.success(
-            "🤖 AUTO TRADING : ON"
-        )
+elif paper_trading:
 
-    else:
+    disable_auto()
 
-        st.sidebar.info(
-            "🤖 AUTO TRADING : OFF"
-        )
+    st.sidebar.success(
+        "🟢 PAPER TRADING : ON"
+    )
 
-except Exception:
+
+else:
+
+    disable_auto()
 
     st.sidebar.info(
-        "🤖 AUTO TRADING : OFF"
+        "⚪ Trading : OFF"
     )
 
 # =========================================================

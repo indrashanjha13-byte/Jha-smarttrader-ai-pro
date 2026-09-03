@@ -1,0 +1,18 @@
+{
+    "symbol": "^NSEI",
+    "strategy": "AI Combo",
+    "option": "ALL",
+    "strike": "ATM",
+    "trading_mode": "PAPER",
+    "risk_percent": 1.0,
+    "max_trades": 5,
+    "max_losses": 3,
+    "max_daily_loss": 2000.0,
+    "minimum_confidence": 65,
+    "atr_multiplier": 1.0,
+    "target_rr": 2.0,
+    "lot_size": 1,
+    "trailing_enabled": false,
+    "trailing_start": 10.0,
+    "trailing_distance": 5.0
+}
