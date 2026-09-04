@@ -73,6 +73,7 @@ class DeltaFutures:
 
         return result
     
+
 # =====================================================
 # Get Ticker
 # =====================================================
@@ -111,13 +112,104 @@ class DeltaFutures:
                 )
                 return {}
 
-            result = data.get("result", {})
+            result = data.get(
+                "result",
+                {}
+            )
+
+            if not isinstance(result, dict):
+                logging.warning(
+                    f"Invalid ticker result | "
+                    f"Symbol={symbol}"
+                )
+                return {}
 
             if not result:
                 logging.warning(
-                    f"Empty ticker result | Symbol={symbol}"
+                    f"Empty ticker result | "
+                    f"Symbol={symbol}"
                 )
                 return {}
+
+            # -------------------------------------------------
+            # Normalize price fields
+            # -------------------------------------------------
+
+            price_fields = [
+                "mark_price",
+                "close",
+                "last_price",
+                "spot_price"
+            ]
+
+            price = 0.0
+
+            for field in price_fields:
+
+                value = result.get(field)
+
+                try:
+
+                    value = float(value)
+
+                    if value > 0:
+
+                        price = value
+                        break
+
+                except (
+                    TypeError,
+                    ValueError
+                ):
+
+                    continue
+
+            # -------------------------------------------------
+            # Fallback to best bid / ask
+            # -------------------------------------------------
+
+            if price <= 0:
+
+                quotes = result.get(
+                    "quotes",
+                    {}
+                )
+
+                if isinstance(
+                    quotes,
+                    dict
+                ):
+
+                    for field in [
+                        "best_bid",
+                        "best_ask"
+                    ]:
+
+                        value = quotes.get(
+                            field
+                        )
+
+                        try:
+
+                            value = float(value)
+
+                            if value > 0:
+
+                                price = value
+                                break
+
+                        except (
+                            TypeError,
+                            ValueError
+                        ):
+
+                            continue
+
+            # -------------------------------------------------
+            # Add normalized price
+            # -------------------------------------------------
+
+            result["price"] = price
 
             return result
 
@@ -125,7 +217,8 @@ class DeltaFutures:
 
             logging.error(
                 f"Delta API request error | "
-                f"Symbol={symbol} | Error={e}"
+                f"Symbol={symbol} | "
+                f"Error={e}"
             )
 
             return {}
@@ -133,7 +226,8 @@ class DeltaFutures:
         except Exception as e:
 
             logging.exception(
-                f"Delta ticker error | Symbol={symbol}"
+                f"Delta ticker error | "
+                f"Symbol={symbol}"
             )
 
             return {}

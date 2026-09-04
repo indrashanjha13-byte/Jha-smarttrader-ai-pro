@@ -14,11 +14,83 @@ def market_status_ribbon():
     c3.info("🤖 AI Scanner")
     c4.warning("📦 Option Chain")
 
-def live_market_chart(symbol, trader):
+def live_market_chart(
+    symbol,
+    trader,
+    market_type="OPTIONS",
+    futures_symbol=None,
+    futures_price=0.0
+):
+
     st.divider()
     st.header("📈 Live Market Chart")
 
+    # =====================================================
+    # DELTA FUTURES
+    # =====================================================
+
+    if market_type == "FUTURES":
+
+        if not futures_symbol:
+            st.warning("⚠️ No Futures contract selected")
+            return 0.0
+
+        current_price = float(
+            futures_price or 0
+        )
+
+        if current_price <= 0:
+            st.warning(
+                f"⚠️ No live price available for "
+                f"{futures_symbol}"
+            )
+            return 0.0
+
+        support = round(
+            current_price - 150,
+            2
+        )
+
+        resistance = round(
+            current_price + 150,
+            2
+        )
+
+        c1, c2, c3, c4 = st.columns(4)
+
+        c1.metric(
+            "Contract",
+            str(futures_symbol)
+        )
+
+        c2.metric(
+            "Current",
+            f"₹{current_price:.2f}"
+        )
+
+        c3.metric(
+            "Support",
+            f"₹{support:.2f}"
+        )
+
+        c4.metric(
+            "Resistance",
+            f"₹{resistance:.2f}"
+        )
+
+        st.info(
+            "📦 Delta Futures live price"
+        )
+
+        return current_price
+
+
+    # =====================================================
+    # NORMAL / OPTIONS MARKET
+    # =====================================================
+
     try:
+
         chart_data = yf.download(
             symbol,
             period="5d",
@@ -26,38 +98,96 @@ def live_market_chart(symbol, trader):
             auto_adjust=False,
             progress=False
         )
+
     except Exception as e:
-        st.error(f"Error fetching data: {e}")
+
+        st.error(
+            f"Error fetching data: {e}"
+        )
+
         return 0.0
+
 
     if chart_data.empty:
-        st.warning("No Data Found")
+
+        st.warning(
+            "No Data Found"
+        )
+
         return 0.0
 
-    if isinstance(chart_data.columns, pd.MultiIndex):
-        chart_data.columns = chart_data.columns.get_level_values(0)
+
+    if isinstance(
+        chart_data.columns,
+        pd.MultiIndex
+    ):
+
+        chart_data.columns = (
+            chart_data.columns
+            .get_level_values(0)
+        )
+
 
     close = chart_data["Close"]
-    ema9 = close.ewm(span=9).mean()
-    ema21 = close.ewm(span=21).mean()
 
-    current_price = float(close.iloc[-1])
-    support = round(current_price - 150, 2)
-    resistance = round(current_price + 150, 2)
+    ema9 = close.ewm(
+        span=9
+    ).mean()
+
+    ema21 = close.ewm(
+        span=21
+    ).mean()
+
+
+    current_price = float(
+        close.iloc[-1]
+    )
+
+    support = round(
+        current_price - 150,
+        2
+    )
+
+    resistance = round(
+        current_price + 150,
+        2
+    )
+
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Current", f"₹{current_price:.2f}")
-    c2.metric("Support", f"₹{support}")
-    c3.metric("Resistance", f"₹{resistance}")
-    c4.metric("Balance", f"₹{getattr(trader, 'balance', 0):,.0f}")
+
+    c1.metric(
+        "Current",
+        f"₹{current_price:.2f}"
+    )
+
+    c2.metric(
+        "Support",
+        f"₹{support:.2f}"
+    )
+
+    c3.metric(
+        "Resistance",
+        f"₹{resistance:.2f}"
+    )
+
+    c4.metric(
+        "Balance",
+        f"₹{getattr(trader, 'balance', 0):,.0f}"
+    )
+
 
     fig = make_subplots(
         rows=2,
         cols=1,
         shared_xaxes=True,
-        row_heights=[0.75, 0.25],
+        row_heights=[
+            0.75,
+            0.25
+        ],
         vertical_spacing=0.03
     )
+
 
     fig.add_trace(
         go.Candlestick(
@@ -68,26 +198,58 @@ def live_market_chart(symbol, trader):
             close=chart_data["Close"],
             name="Price"
         ),
-        row=1, col=1
+        row=1,
+        col=1
     )
+
 
     fig.add_trace(
-        go.Scatter(x=chart_data.index, y=ema9, mode="lines", name="EMA 9"),
-        row=1, col=1
+        go.Scatter(
+            x=chart_data.index,
+            y=ema9,
+            mode="lines",
+            name="EMA 9"
+        ),
+        row=1,
+        col=1
     )
+
 
     fig.add_trace(
-        go.Scatter(x=chart_data.index, y=ema21, mode="lines", name="EMA 21"),
-        row=1, col=1
+        go.Scatter(
+            x=chart_data.index,
+            y=ema21,
+            mode="lines",
+            name="EMA 21"
+        ),
+        row=1,
+        col=1
     )
+
 
     fig.add_trace(
-        go.Bar(x=chart_data.index, y=chart_data["Volume"], name="Volume"),
-        row=2, col=1
+        go.Bar(
+            x=chart_data.index,
+            y=chart_data["Volume"],
+            name="Volume"
+        ),
+        row=2,
+        col=1
     )
 
-    fig.add_hline(y=support, line_color="green", annotation_text="Support")
-    fig.add_hline(y=resistance, line_color="red", annotation_text="Resistance")
+
+    fig.add_hline(
+        y=support,
+        line_color="green",
+        annotation_text="Support"
+    )
+
+    fig.add_hline(
+        y=resistance,
+        line_color="red",
+        annotation_text="Resistance"
+    )
+
 
     fig.update_layout(
         template="plotly_dark",
@@ -96,9 +258,13 @@ def live_market_chart(symbol, trader):
         hovermode="x unified"
     )
 
-    st.plotly_chart(fig, use_container_width=True)
 
-    # Return current_price so other functions can use it safely
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
+
+
     return current_price
 
 def live_alerts(trader, current_price, signal):
@@ -227,7 +393,10 @@ def market_page(
     trader,
     INDICES,
     FO_STOCKS,
-    scan_all_option_chain
+    scan_all_option_chain,
+    market_type="OPTIONS",
+    futures_symbol=None,
+    futures_price=0.0
 ):
     st.title("📈 Market")
     market_status_ribbon()
@@ -257,6 +426,37 @@ def market_page(
 
     st.divider()
 
+    # =========================================================
+    # DELTA FUTURES LIVE PRICE
+    # =========================================================
+
+    if market_type == "FUTURES" and futures_symbol:
+
+        st.subheader("📦 Delta Futures")
+
+        futures_col1, futures_col2 = st.columns(2)
+
+        futures_col1.metric(
+            "Contract",
+            str(futures_symbol)
+        )
+
+        if futures_price and float(futures_price) > 0:
+
+            futures_col2.metric(
+                "Live Price",
+                f"₹{float(futures_price):,.2f}"
+            )
+
+        else:
+
+            futures_col2.metric(
+                "Live Price",
+                "No Data"
+            )
+
+    st.divider()
+
     st.header("📊 Live Option Chain")
     option_symbol = st.selectbox(
         "Select Option Symbol",
@@ -275,7 +475,21 @@ def market_page(
                 st.json(data[option_symbol])
 
     # Safely get current price from live_market_chart
-    current_price = live_market_chart(symbol, trader)
+    current_price = live_market_chart(
+        symbol,
+        trader,
+        market_type=market_type,
+        futures_symbol=(
+            futures_symbol
+            if market_type == "FUTURES"
+            else None
+        ),
+        futures_price=(
+            futures_price
+            if market_type == "FUTURES"
+            else 0.0
+        )
+    )
     
     st.divider()
     top_gainers_losers()

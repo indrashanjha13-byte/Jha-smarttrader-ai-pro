@@ -364,15 +364,27 @@ market_type = st.sidebar.selectbox(
 
 
 # =========================
-# Option Settings
+# Option / Futures Settings
 # =========================
 
+# Safe defaults so variables always exist
+option_mode = "N/A"
+selected_lots = 1
+LOT_SIZE = 1
+quantity = 1
+option_side = "N/A"
+strike_mode = "ATM"
+
 if market_type == "OPTIONS":
+
+    # =========================
+    # Option Selector
+    # =========================
 
     options = [
         "CE",
         "PE",
-        "ALL"
+        "ALL",
     ]
 
     default_option = settings.get(
@@ -383,13 +395,15 @@ if market_type == "OPTIONS":
     if default_option not in options:
         default_option = "CE"
 
-
-    option_side = st.sidebar.selectbox(
-        "Option",
+    option_mode = st.sidebar.selectbox(
+        "Option Mode",
         options,
         index=options.index(default_option)
     )
 
+    # =========================
+    # Strike Selector
+    # =========================
 
     strikes = [
         "ITM",
@@ -405,12 +419,41 @@ if market_type == "OPTIONS":
     if default_strike not in strikes:
         default_strike = "ATM"
 
-
     strike_mode = st.sidebar.selectbox(
         "Strike",
         strikes,
         index=strikes.index(default_strike)
     )
+
+    # =========================
+    # Lot Settings
+    # =========================
+
+    lots = st.sidebar.number_input(
+        "Number of Lots",
+        min_value=1,
+        max_value=10,
+        value=1,
+        step=1
+    )
+
+    lot_size = st.sidebar.number_input(
+        "Lot Size",
+        min_value=1,
+        value=500,
+        step=1
+    )
+
+    selected_lots = int(lots)
+    LOT_SIZE = int(lot_size)
+
+    quantity = selected_lots * LOT_SIZE
+
+    st.sidebar.info(
+        f"Order Quantity: {quantity}"
+    )
+
+    option_side = option_mode
 
 
 # =========================
@@ -419,59 +462,45 @@ if market_type == "OPTIONS":
 
 else:
 
+    futures_symbols = []
+
     try:
 
         delta = DeltaFutures()
 
         futures_data = delta.get_futures()
 
-        futures_symbols = []
+        if futures_data:
 
-        for product in futures_data:
+            for product in futures_data:
 
-            futures_contract_symbol = product.get(
-                "symbol"
-            )
+                futures_contract_symbol = product.get(
+                    "symbol"
+                )
 
-            contract_type = str(
-                product.get(
-                    "contract_type",
-                ""
-            )
-        ).lower()
+                if futures_contract_symbol:
 
-        if (
-            futures_contract_symbol
-            and contract_type in (
-                "futures",
-                "perpetual_futures"
-            )
-        ):
-
-            futures_symbols.append(
-                str(
-                    futures_contract_symbol
-                ).strip().upper()
-            )
+                    futures_symbols.append(
+                        str(
+                            futures_contract_symbol
+                        ).strip().upper()
+                    )
 
         # Remove duplicates
         futures_symbols = sorted(
-            list(set(futures_symbols))
+            list(
+                set(futures_symbols)
+            )
         )
 
-        if not futures_symbols:
-
-            st.sidebar.warning(
-                "⚠️ No Delta Futures contracts found."
-            )
-
     except Exception as e:
-
-        futures_symbols = []
 
         st.sidebar.error(
             f"Delta Futures Error: {e}"
         )
+
+        futures_symbols = []
+
 
     # =========================
     # Fallback
@@ -513,10 +542,14 @@ else:
         )
     )
 
-
-    # Options are not used
+    # Futures do not use CE/PE lots
+    option_mode = "N/A"
+    selected_lots = 1
+    LOT_SIZE = 1
+    quantity = 1
     option_side = "N/A"
     strike_mode = "N/A"
+
 
 # =========================
 # Futures Live Price
@@ -541,14 +574,8 @@ if market_type == "FUTURES":
 
             current_price = float(
                 ticker.get(
-                    "mark_price",
-                    ticker.get(
-                        "close",
-                        ticker.get(
-                            "last_price",
-                            0
-                        )
-                    )
+                    "price",
+                    0
                 ) or 0
             )
 
@@ -711,6 +738,81 @@ if page == "🏠 Dashboard":
         )
 
 
+        # =====================================================
+        # AUTO PAPER TRADE
+        # =====================================================
+
+        raw_signal = signal_data.get(
+            "signal",
+            signal_data.get(
+                "Signal",
+                signal_data.get(
+                    "action",
+                    signal_data.get(
+                        "Action",
+                        ""
+                    )
+                )
+            )
+        )
+
+        signal = str(
+            raw_signal
+        ).upper().strip()
+
+        # Normalize common signal formats
+        if "BUY" in signal and "SELL" not in signal:
+            signal = "BUY"
+
+        elif "SELL" in signal and "BUY" not in signal:
+            signal = "SELL"
+
+        else:
+            signal = ""
+
+
+        if (
+            paper_trading
+            and not live_auto_trading
+            and current_price > 0
+            and signal in ["BUY", "SELL"]
+        ):
+
+            try:
+
+                success, result = trade_manager.process(
+                    symbol=symbol,
+                    signal=signal,
+                    current_price=current_price,
+                    capital=trader.balance,
+                    option_mode=option_mode,
+                    lots=selected_lots,
+                    lot_size=LOT_SIZE
+                )
+
+                if success:
+
+                    st.success(
+                        f"🤖 AUTO PAPER TRADE: {result}"
+                    )
+
+                else:
+
+                    st.info(
+                        f"ℹ️ Trade: {result}"
+                    )
+
+            except Exception as e:
+
+                st.error(
+                    f"❌ Auto Trade Error: {e}"
+                )
+
+
+    # =========================================================
+    # DASHBOARD PAGE
+    # =========================================================
+
     try:
 
         dashboard_page(
@@ -739,7 +841,18 @@ elif page == "📈 Market":
             trader=trader,
             INDICES=INDICES,
             FO_STOCKS=FO_STOCKS,
-            scan_all_option_chain=scan_all_option_chain
+            scan_all_option_chain=scan_all_option_chain,
+            market_type=market_type,
+            futures_symbol=(
+                futures_symbol
+                if market_type == "FUTURES"
+                else None
+            ),
+            futures_price=(
+                current_price
+                if market_type == "FUTURES"
+                else 0.0
+            )
         )
 
     except Exception as e:
@@ -747,7 +860,6 @@ elif page == "📈 Market":
         st.error(
             f"❌ Market Page Error: {e}"
         )
-
 
 # =========================================================
 # TRADING
