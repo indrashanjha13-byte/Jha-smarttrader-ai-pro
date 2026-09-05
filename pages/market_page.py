@@ -45,16 +45,23 @@ def live_market_chart(
                 f"{futures_symbol}"
             )
             return 0.0
+        # =====================================================
+        # SUPPORT / RESISTANCE
+        # =====================================================
 
         support = round(
-            current_price - 150,
-            2
+            current_price  * 0.99,
+            8
         )
 
         resistance = round(
-            current_price + 150,
-            2
+            current_price * 1.01,
+            8
         )
+
+        # =====================================================
+        # MARKET METRICS
+        # =====================================================
 
         c1, c2, c3, c4 = st.columns(4)
 
@@ -65,17 +72,17 @@ def live_market_chart(
 
         c2.metric(
             "Current",
-            f"₹{current_price:.2f}"
+            f"₹{current_price:.8f}"
         )
 
         c3.metric(
             "Support",
-            f"₹{support:.2f}"
+            f"₹{support:.8f}"
         )
 
         c4.metric(
             "Resistance",
-            f"₹{resistance:.2f}"
+            f"₹{resistance:.8f}"
         )
 
         st.info(
@@ -148,13 +155,13 @@ def live_market_chart(
     # =====================================================
 
     support = round(
-        current_price * 0.99,
-        8
+        current_price - 150,
+        2
     )
 
     resistance = round(
-        current_price * 1.01,
-        8
+        current_price + 150,
+        2
     )
 
     # =====================================================
@@ -165,17 +172,17 @@ def live_market_chart(
 
     c1.metric(
         "Current",
-        f"₹{current_price:.8f}"
+        f"₹{current_price:.2f}"
     )
 
     c2.metric(
         "Support",
-        f"₹{support:.8f}"
+        f"₹{support:.2f}"
     )
 
     c3.metric(
         "Resistance",
-        f"₹{resistance:.8f}"
+        f"₹{resistance:.2f}"
     )
 
     c4.metric(
@@ -460,7 +467,7 @@ def market_page(
             if len(data) >= 2:
                 prev = float(data["Close"].iloc[-2])
                 curr = float(data["Close"].iloc[-1])
-                change = round(curr - prev, 2)
+                change = round(curr - prev, 8)
                 percent = round((change / prev) * 100, 2)
                 cols[i].metric(name, f"{curr:.2f}", f"{change:.2f} ({percent}%)")
             else:
