@@ -158,17 +158,17 @@ def live_market_chart(
 
     c1.metric(
         "Current",
-        f"₹{current_price:.2f}"
+        f"₹{current_price:.8f}"
     )
 
     c2.metric(
         "Support",
-        f"₹{support:.2f}"
+        f"₹{support:.8f}"
     )
 
     c3.metric(
         "Resistance",
-        f"₹{resistance:.2f}"
+        f"₹{resistance:.8f}"
     )
 
     c4.metric(
