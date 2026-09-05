@@ -496,7 +496,7 @@ def market_page(
 
             futures_col2.metric(
                 "Live Price",
-                f"₹{float(futures_price):,.2f}"
+                f"₹{float(futures_price):,.8f}"
             )
 
         else:
