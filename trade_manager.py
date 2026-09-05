@@ -4,6 +4,7 @@ from ai_learning import auto_strategy
 from risk_manager import calculate_trade_details
 from config import LOT_SIZE, MODE
 
+# DEPLOYMENT_REFRESH_2026
 
 class TradeManager:
     """
