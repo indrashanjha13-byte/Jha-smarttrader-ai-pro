@@ -583,7 +583,7 @@ if market_type == "FUTURES":
 
                 st.sidebar.success(
                     f"💰 {futures_symbol} "
-                    f"Price: {current_price:,.2f}"
+                    f"Price: {current_price:,.8f}"
                 )
 
             else:
@@ -729,14 +729,22 @@ if page == "🏠 Dashboard":
         )
 
     else:
+        # =====================================================
+        # CURRENT PRICE
+        # =====================================================
+        # Futures: keep live Delta Futures price
+        # Options/Stocks: use signal Close price
 
-        current_price = float(
-            signal_data.get(
-                "Close",
-                0.0
-            ) or 0.0
-        )
+        if market_type == "FUTURES":
+            current_price = float(current_price or 0.0)
 
+        else:
+             current_price = float(
+                 signal_data.get(
+                     "Close",
+                     0.0
+                  ) or 0.0
+                )
 
         # =====================================================
         # AUTO PAPER TRADE
