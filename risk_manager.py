@@ -85,16 +85,20 @@ def calculate_trade_details(
 
     potential_profit = actual_risk * reward_ratio
 
+    # Keep high precision for low-priced Futures.
+    # Keep normal 2 decimals for regular instruments.
+    precision = 8 if entry_price < 1 else 2
+
     return {
         "risk_percent": MAX_RISK_PER_TRADE,
         "risk_amount": round(risk_amount, 2),
-        "risk_per_unit": round(risk_per_unit, 2),
-        "risk_per_lot": round(risk_per_lot, 2),
+        "risk_per_unit": round(risk_per_unit, precision),
+        "risk_per_lot": round(risk_per_lot, precision),
         "lots": lots,
         "lot_size": lot_size,
         "quantity": total_quantity,
         "actual_risk": round(actual_risk, 2),
-        "target_price": round(target_price, 2),
+        "target_price": round(target_price, precision),
         "reward_ratio": reward_ratio,
         "potential_profit": round(potential_profit, 2),
     }

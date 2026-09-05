@@ -1,7 +1,9 @@
 import logging
 import math
+import time
 
 import pandas as pd
+import requests
 import yfinance as yf
 import pandas_ta as ta
 
@@ -35,6 +37,308 @@ def download_data(symbol, period="30d", interval="5m"):
 
     try:
 
+        symbol = str(symbol).upper().strip()
+
+        # =================================================
+        # DELTA FUTURES
+        # =================================================
+
+        # Delta Futures symbols such as:
+        # 1000BONKUSD
+        # BTCUSD
+        # ETHUSD
+        #
+        # Do NOT send these symbols to Yahoo Finance.
+
+        is_delta_symbol = (
+            symbol == "1000BONKUSD"
+            or symbol.endswith("USD")
+        )
+
+        if is_delta_symbol:
+
+            logging.info(
+                f"Using Delta Exchange data for {symbol}"
+            )
+
+            # -------------------------------------------------
+            # Delta API
+            # -------------------------------------------------
+
+            base_url = (
+                "https://api.india.delta.exchange"
+            )
+
+            endpoint = (
+                f"{base_url}/v2/history/candles"
+            )
+
+            # -------------------------------------------------
+            # Resolution
+            # -------------------------------------------------
+
+            resolution = interval
+
+            if resolution not in [
+                "1m",
+                "3m",
+                "5m",
+                "15m",
+                "30m",
+                "1h",
+                "2h",
+                "4h",
+                "6h",
+                "1d",
+                "1w"
+            ]:
+
+                resolution = "5m"
+
+            # -------------------------------------------------
+            # Number of candles
+            #
+            # We need enough candles for:
+            # EMA21
+            # RSI14
+            # MACD
+            # SuperTrend
+            # Volume20
+            #
+            # 1000 candles is more than enough.
+            # -------------------------------------------------
+
+            end_time = int(
+                time.time()
+            )
+
+            candle_count = 1000
+
+            interval_seconds = {
+                "1m": 60,
+                "3m": 180,
+                "5m": 300,
+                "15m": 900,
+                "30m": 1800,
+                "1h": 3600,
+                "2h": 7200,
+                "4h": 14400,
+                "6h": 21600,
+                "1d": 86400,
+                "1w": 604800
+            }
+
+            seconds = interval_seconds.get(
+                resolution,
+                300
+            )
+
+            start_time = (
+                end_time
+                - (
+                    candle_count
+                    * seconds
+                )
+            )
+
+            # -------------------------------------------------
+            # Request
+            # -------------------------------------------------
+
+            response = requests.get(
+                endpoint,
+                params={
+                    "resolution": resolution,
+                    "symbol": symbol,
+                    "start": start_time,
+                    "end": end_time
+                },
+                headers={
+                    "Accept": "application/json",
+                    "User-Agent":
+                        "JhaSmartTraderAIPro/1.0"
+                },
+                timeout=15
+            )
+
+            response.raise_for_status()
+
+            data = response.json()
+
+            # -------------------------------------------------
+            # Validate Response
+            # -------------------------------------------------
+
+            if not data.get("success"):
+
+                logging.warning(
+                    f"Delta API failed for {symbol}: "
+                    f"{data}"
+                )
+
+                return None
+
+            candles = data.get(
+                "result",
+                []
+            )
+
+            if not candles:
+
+                logging.warning(
+                    f"No Delta candles returned "
+                    f"for {symbol}"
+                )
+
+                return None
+
+            # -------------------------------------------------
+            # Convert Delta candles to DataFrame
+            # -------------------------------------------------
+
+            rows = []
+
+            for candle in candles:
+
+                try:
+
+                    rows.append({
+                        "Time": pd.to_datetime(
+                            candle.get("time"),
+                            unit="s"
+                        ),
+
+                        "Open": float(
+                            candle.get("open", 0)
+                        ),
+
+                        "High": float(
+                            candle.get("high", 0)
+                        ),
+
+                        "Low": float(
+                            candle.get("low", 0)
+                        ),
+
+                        "Close": float(
+                            candle.get("close", 0)
+                        ),
+
+                        "Volume": float(
+                            candle.get("volume", 0)
+                        )
+                    })
+
+                except Exception:
+
+                    continue
+
+            if not rows:
+
+                logging.warning(
+                    f"Unable to parse Delta candles "
+                    f"for {symbol}"
+                )
+
+                return None
+
+            df = pd.DataFrame(rows)
+
+            # -------------------------------------------------
+            # Datetime Index
+            # -------------------------------------------------
+
+            df["Time"] = pd.to_datetime(
+                df["Time"]
+            )
+
+            df.set_index(
+                "Time",
+                inplace=True
+            )
+
+            # -------------------------------------------------
+            # Sort Oldest -> Newest
+            # -------------------------------------------------
+
+            df.sort_index(
+                inplace=True
+            )
+
+            # -------------------------------------------------
+            # Remove Duplicate Candles
+            # -------------------------------------------------
+
+            df = df[
+                ~df.index.duplicated(
+                    keep="last"
+                )
+            ]
+
+            # -------------------------------------------------
+            # Required Columns
+            # -------------------------------------------------
+
+            required_columns = [
+                "Open",
+                "High",
+                "Low",
+                "Close",
+                "Volume"
+            ]
+
+            for column in required_columns:
+
+                if column not in df.columns:
+
+                    logging.warning(
+                        f"Missing column {column} "
+                        f"for {symbol}"
+                    )
+
+                    return None
+
+            # -------------------------------------------------
+            # Numeric Conversion
+            # -------------------------------------------------
+
+            for column in required_columns:
+
+                df[column] = pd.to_numeric(
+                    df[column],
+                    errors="coerce"
+                )
+
+            # -------------------------------------------------
+            # Remove Invalid Rows
+            # -------------------------------------------------
+
+            df.dropna(
+                subset=[
+                    "Open",
+                    "High",
+                    "Low",
+                    "Close"
+                ],
+                inplace=True
+            )
+
+            if df.empty:
+
+                return None
+
+            logging.info(
+                f"Delta data loaded: "
+                f"{symbol} | "
+                f"{len(df)} candles"
+            )
+
+            return df
+
+        # =================================================
+        # YAHOO FINANCE
+        # =================================================
+
         df = yf.download(
             symbol,
             period=period,
@@ -56,7 +360,10 @@ def download_data(symbol, period="30d", interval="5m"):
         # Fix yfinance MultiIndex
         # =================================================
 
-        if isinstance(df.columns, pd.MultiIndex):
+        if isinstance(
+            df.columns,
+            pd.MultiIndex
+        ):
 
             df.columns = [
                 column[0]
@@ -91,13 +398,14 @@ def download_data(symbol, period="30d", interval="5m"):
             if column not in df.columns:
 
                 logging.warning(
-                    f"Missing column {column} for {symbol}"
+                    f"Missing column {column} "
+                    f"for {symbol}"
                 )
 
                 return None
 
         # =================================================
-        # Keep Required Columns Only
+        # Keep Required Columns
         # =================================================
 
         df = df[
@@ -105,7 +413,7 @@ def download_data(symbol, period="30d", interval="5m"):
         ].copy()
 
         # =================================================
-        # Convert Numeric
+        # Numeric Conversion
         # =================================================
 
         for column in required_columns:
@@ -142,8 +450,6 @@ def download_data(symbol, period="30d", interval="5m"):
         )
 
         return None
-
-
 # =========================================================
 # Main Signal Engine
 # =========================================================

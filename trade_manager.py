@@ -547,19 +547,19 @@ class TradeManager:
                 trade.get("target_price", 0)
             )
 
+            # Always ensure target is above entry
             if target <= current_price:
+                target = current_price * 1.02
 
-                if option_mode == "N/A":
-                    target = round(
-                        current_price * 1.02,
-                    8
-                    )
-
+            # Precision based on instrument
+            if option_mode == "N/A":
+                target = round(target, 8)
             else:
-                target = round(
-                    current_price * 1.02,
-                2
-            )
+                target = round(target, 2)
+
+            # Final safety check
+            if target <= current_price:
+                return False, "❌ Invalid BUY target"
 
             # -------------------------------------------------
             # BUY

@@ -624,10 +624,18 @@ st.sidebar.subheader("🤖 Trading Mode")
 
 paper_trading = st.sidebar.toggle(
     "🟢 Paper Trading",
-    value=not is_enabled(),
+    value=True,
     key="paper_trading_switch"
 )
+# -------------------------
+# Auto Paper Trading
+# -------------------------
 
+auto_paper_trading = st.sidebar.toggle(
+    "🟢 Auto Paper Trading",
+    value=False,
+    key="auto_paper_trading_switch"
+)
 
 # -------------------------
 # Live Auto Trading
@@ -635,7 +643,7 @@ paper_trading = st.sidebar.toggle(
 
 live_auto_trading = st.sidebar.toggle(
     "🔴 Live Auto Trading",
-    value=is_enabled(),
+    value=False,
     key="live_auto_trading_switch"
 )
 
@@ -649,7 +657,7 @@ if live_auto_trading:
     enable_auto()
 
     st.sidebar.warning(
-        "⚠️ LIVE AUTO TRADING : ON"
+        "🔴 LIVE AUTO TRADING : ON"
     )
 
     live_confirm = st.sidebar.checkbox(
@@ -668,20 +676,23 @@ if live_auto_trading:
 
 elif paper_trading:
 
+    # Never enable broker live auto mode
     disable_auto()
 
     st.sidebar.success(
         "🟢 PAPER TRADING : ON"
     )
+    if auto_paper_trading:
+
+        st.sidebar.success(
+            "🟢 AUTO PAPER TRADING : ON"
+        )
 
 
-else:
-
-    disable_auto()
-
-    st.sidebar.info(
-        "⚪ Trading : OFF"
-    )
+    else:
+         st.sidebar.info(
+            "⚪ AUTO PAPER TRADING : OFF"
+        )
 
 # =========================================================
 # DASHBOARD
@@ -695,7 +706,17 @@ if page == "🏠 Dashboard":
 
     if market_type == "FUTURES":
 
-        signal_data = {}
+        try:
+
+            signal_data = get_signals(
+                futures_symbol
+            )
+
+        except Exception as e:
+
+            signal_data = {
+                "error": str(e)
+            }
 
     else:
 
@@ -777,55 +798,104 @@ if page == "🏠 Dashboard":
 
         else:
             signal = ""
+            
+# =====================================================
+# AUTO PAPER TRADE
+# =====================================================
 
+debug_futures_symbol = (
+    futures_symbol
+    if "futures_symbol" in globals()
+    else "NOT_DEFINED"
+)
+
+trade_symbol = (
+    futures_symbol
+    if market_type == "FUTURES" and futures_symbol
+    else symbol
+)
+
+# =====================================================
+# AUTO PAPER EXIT CHECK
+# IMPORTANT:
+# Exit check runs independently of BUY/SELL signal
+# =====================================================
+
+if (
+    paper_trading
+    and auto_paper_trading
+    and not live_auto_trading
+    and current_price > 0
+):
+
+    try:
+
+        exit_ok, exit_result = trade_manager.check_position(
+            current_price=current_price,
+            symbol=trade_symbol,
+            option_mode=option_mode
+        )
 
         if (
-            paper_trading
-            and not live_auto_trading
-            and current_price > 0
-            and signal in ["BUY", "SELL"]
+            exit_ok
+            and isinstance(exit_result, dict)
+            and exit_result.get("status") == "EXIT"
         ):
 
-            try:
-                # =====================================================
-                # TRADE SYMBOL
-                # Futures -> Delta Futures contract
-                # Others  -> Selected symbol
-                # =====================================================
+            st.success(
+                f"🎯 AUTO PAPER EXIT: "
+                f"{exit_result.get('message', exit_result)}"
+            )
 
-                trade_symbol = (
-                    futures_symbol
-                    if market_type == "FUTURES" and futures_symbol
-                    else symbol
-                )
+    except Exception as e:
 
-                success, result = trade_manager.process(
-                    symbol=trade_symbol,
-                    signal=signal,
-                    current_price=current_price,
-                    capital=trader.balance,
-                    option_mode=option_mode,
-                    lots=selected_lots,
-                    lot_size=LOT_SIZE
-                )
+        st.error(
+            f"❌ Auto Exit Error: {e}"
+        )
 
-                if success:
 
-                    st.success(
-                        f"🤖 AUTO PAPER TRADE: {result}"
-                    )
+# =====================================================
+# AUTO PAPER ENTRY
+# Only BUY / SELL creates a new position
+# =====================================================
 
-                else:
+if (
+    paper_trading
+    and auto_paper_trading
+    and not live_auto_trading
+    and current_price > 0
+    and signal in ["BUY", "SELL"]
+):
 
-                    st.info(
-                        f"ℹ️ Trade: {result}"
-                    )
+    try:
 
-            except Exception as e:
+        success, result = trade_manager.process(
+            symbol=trade_symbol,
+            signal=signal,
+            current_price=current_price,
+            capital=trader.balance,
+            option_mode=option_mode,
+            lots=selected_lots,
+            lot_size=LOT_SIZE
+        )
 
-                st.error(
-                    f"❌ Auto Trade Error: {e}"
-                )
+        if success:
+
+            st.success(
+                f"🤖 AUTO PAPER TRADE: {result}"
+            )
+
+        else:
+
+            st.info(
+                f"ℹ️ Trade: {result}"
+            )
+
+    except Exception as e:
+
+        st.error(
+            f"❌ Auto Trade Error: {e}"
+        )
 
 
     # =========================================================

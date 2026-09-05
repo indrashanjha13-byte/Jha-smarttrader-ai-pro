@@ -549,30 +549,50 @@ def market_page(
     ai_market_scanner()
 
     st.divider()
-    data = get_signals(symbol)
+   
+    signal_symbol = (
+        futures_symbol
+        if market_type == "FUTURES" and futures_symbol
+        else symbol
+    )
+    data = get_signals(signal_symbol)
 
     if "error" not in data:
-        decision = ai_decision(
-            rsi=data["RSI"],
-            macd=data["MACD"],
-            macd_signal=data["MACD_SIGNAL"],
-            ema9=data["EMA9"],
-            ema21=data["EMA21"],
-            supertrend=data["SUPERTREND"],
-            volume=data["Volume"],
-            avg_volume=data["AVG_VOLUME"]
-        )
+   
+        # =====================================================
+        # USE SIGNAL ENGINE DIRECTLY
+        # Futures -> Delta Futures signal
+        # Others  -> Selected symbol signal
+        # =====================================================
+
+        market_signal = str(
+            data.get(
+                "Signal",
+                data.get(
+                    "SIGNAL",
+                    "HOLD"
+                )
+            )
+        ).upper().strip()
+
+        # Normalize signal
+        if "BUY" in market_signal and "SELL" not in market_signal:
+            market_signal = "BUY"
+
+        elif "SELL" in market_signal and "BUY" not in market_signal:
+            market_signal = "SELL"
+
+        else:
+            market_signal = "HOLD"
 
         live_alerts(
             trader,
             current_price,
-            decision.get(
-                "decision",
-                "HOLD"
-            )
+            market_signal
         )
 
     else:
+
         st.error(
             f"Signal Error: {data['error']}"
         )
