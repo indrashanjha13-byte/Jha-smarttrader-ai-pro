@@ -787,9 +787,20 @@ if page == "🏠 Dashboard":
         ):
 
             try:
+                # =====================================================
+                # TRADE SYMBOL
+                # Futures -> Delta Futures contract
+                # Others  -> Selected symbol
+                # =====================================================
+
+                trade_symbol = (
+                    futures_symbol
+                    if market_type == "FUTURES" and futures_symbol
+                    else symbol
+                )
 
                 success, result = trade_manager.process(
-                    symbol=symbol,
+                    symbol=trade_symbol,
                     signal=signal,
                     current_price=current_price,
                     capital=trader.balance,

@@ -493,11 +493,16 @@ class TradeManager:
             # -------------------------------------------------
             # Stoploss
             # -------------------------------------------------
-
-            stoploss_price = round(
-                current_price * 0.99,
-                2
-            )
+            if option_mode == "N/A":
+                stoploss_price = round(
+                    current_price * 0.99,
+                8
+                )
+            else:
+                stoploss_price = round(
+                    current_price * 0.99,
+                    2
+                )
 
             # -------------------------------------------------
             # Risk Manager
@@ -543,10 +548,18 @@ class TradeManager:
             )
 
             if target <= current_price:
+
+                if option_mode == "N/A":
+                    target = round(
+                        current_price * 1.02,
+                    8
+                    )
+
+            else:
                 target = round(
                     current_price * 1.02,
-                    2
-                )
+                2
+            )
 
             # -------------------------------------------------
             # BUY
