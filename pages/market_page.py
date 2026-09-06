@@ -584,6 +584,11 @@ def market_page(
 
         else:
             market_signal = "HOLD"
+        # =====================================================
+        # CONNECT MARKET SIGNAL TO AUTO TRADING
+        # =====================================================
+
+        signal = market_signal
 
         live_alerts(
             trader,
