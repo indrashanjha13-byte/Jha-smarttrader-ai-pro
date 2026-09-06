@@ -798,6 +798,14 @@ if page == "🏠 Dashboard":
 
         else:
             signal = ""
+# =====================================================
+# SAFE CURRENT PRICE
+# =====================================================
+
+try:
+    current_price = float(current_price)
+except (NameError, TypeError, ValueError):
+    current_price = 0.0
 
 # =====================================================
 # AUTO PAPER TRADE
@@ -852,12 +860,6 @@ if (
         st.error(
             f"❌ Auto Exit Error: {e}"
         )
-# =====================================================
-# SAFE SIGNAL DEFAULT
-# =====================================================
-
-signal = locals().get("signal", "HOLD")
-
 
 # =====================================================
 # AUTO PAPER ENTRY
