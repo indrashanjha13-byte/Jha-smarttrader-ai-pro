@@ -2711,17 +2711,17 @@ if page == "🏠 Dashboard":
 
         dashboard_page(
 
-            trader=trader,
+            trader,
 
-            current_price=underlying_price,
+            underlying_price,
 
-            symbol=symbol,
+            symbol,
 
-            market_type=market_type,
+            market_type,
 
-            trade_symbol=trade_symbol,
-
+            trade_symbol
         )
+        
 
     except Exception as e:
 
