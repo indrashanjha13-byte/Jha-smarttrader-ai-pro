@@ -2717,9 +2717,6 @@ if page == "🏠 Dashboard":
 
             symbol,
 
-            market_type,
-
-            trade_symbol
         )
         
 
