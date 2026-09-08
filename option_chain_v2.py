@@ -5,9 +5,14 @@ import logging
 
 def get_option_chain_summary(symbol="^NSEI"):
     """
-    Fetches latest price data safely using yfinance and calculates ATM strike based on symbol type.
+    Get underlying Spot and ATM strike.
+
+    Actual CE/PE option premium will be supplied
+    separately from the option-chain/broker data source.
     """
+
     try:
+
         df = yf.download(
             symbol,
             period="5d",
@@ -17,47 +22,146 @@ def get_option_chain_summary(symbol="^NSEI"):
         )
 
         if df is None or df.empty:
-            logging.warning(f"⚠️ No price data found for symbol: {symbol}")
-            return {"error": "No Data Available"}
+            logging.warning(
+                f"⚠️ No price data found for symbol: {symbol}"
+            )
+            return {
+                "error": "No Data Available"
+            }
 
-        # Robust MultiIndex columns flattening
+        # -------------------------------------------------
+        # Flatten MultiIndex
+        # -------------------------------------------------
+
         if isinstance(df.columns, pd.MultiIndex):
-            df.columns = [col[0] for col in df.columns]
 
-        # Check if 'Close' column exists
+            df.columns = [
+                col[0]
+                for col in df.columns
+            ]
+
+        # -------------------------------------------------
+        # Close Check
+        # -------------------------------------------------
+
         if "Close" not in df.columns:
-            return {"error": "'Close' price column missing from downloaded data"}
 
-        # Drop NaN values in Close series
-        close_series = df["Close"].dropna()
+            return {
+                "error": (
+                    "'Close' price column missing "
+                    "from downloaded data"
+                )
+            }
+
+        close_series = (
+            df["Close"]
+            .dropna()
+        )
+
         if close_series.empty:
-            return {"error": "Empty Close price series"}
 
-        spot = float(close_series.iloc[-1])
+            return {
+                "error": "Empty Close price series"
+            }
 
-        # Dynamic ATM Strike Rounding based on Symbol Type
-        s_upper = str(symbol).upper()
+        # -------------------------------------------------
+        # Spot
+        # -------------------------------------------------
+
+        spot = float(
+            close_series.iloc[-1]
+        )
+
+        # -------------------------------------------------
+        # Index Name
+        # -------------------------------------------------
+
+        s_upper = str(
+            symbol
+        ).upper()
+
+        # -------------------------------------------------
+        # Strike Step
+        # -------------------------------------------------
+
         if "NSEBANK" in s_upper:
-            strike_diff = 100  # Bank Nifty strikes are multiples of 100
-        elif "BSESN" in s_upper or "SENSEX" in s_upper:
-            strike_diff = 100  # Sensex strikes
-        elif "NSEI" in s_upper or "NIFTY" in s_upper:
-            strike_diff = 50   # Nifty strikes are multiples of 50
-        else:
-            strike_diff = 5    # Standard equities default rounding
 
-        atm = round(spot / strike_diff) * strike_diff
+            strike_diff = 100
+
+        elif (
+            "BSESN" in s_upper
+            or "SENSEX" in s_upper
+        ):
+
+            strike_diff = 100
+
+        elif (
+            "NSEI" in s_upper
+            or "NIFTY" in s_upper
+        ):
+
+            strike_diff = 50
+
+        elif "CNXFINANCE" in s_upper:
+
+            strike_diff = 50
+
+        elif "NSEMDCP50" in s_upper:
+
+            strike_diff = 25
+
+        else:
+
+            strike_diff = 5
+
+        # -------------------------------------------------
+        # ATM
+        # -------------------------------------------------
+
+        atm = round(
+            spot / strike_diff
+        ) * strike_diff
+
+        # -------------------------------------------------
+        # Result
+        # -------------------------------------------------
 
         return {
-            "Spot": round(spot, 2),
-            "ATM": int(atm),
+
+            "Symbol": symbol,
+
+            "Spot": round(
+                spot,
+                2
+            ),
+
+            "ATM": int(
+                atm
+            ),
+
+            # Actual premiums will be
+            # connected next.
+            "CE_Premium": None,
+
+            "PE_Premium": None,
+
+            "CE_Contract": None,
+
+            "PE_Contract": None,
+
             "Signal": "Ready",
+
             "PCR": 0.0,
+
             "MaxPain": 0.0
         }
 
     except Exception as e:
-        logging.error(f"❌ Error in get_option_chain_summary for {symbol}: {e}")
+
+        logging.exception(
+            "❌ Error in get_option_chain_summary"
+        )
+
         return {
             "error": str(e)
         }

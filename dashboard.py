@@ -1,14 +1,20 @@
+# ============================================================
+# Jha SmartTrader AI Pro
+# dashboard.py
+# ============================================================
+
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, time
+import logging
 
 import streamlit as st
 from PIL import Image
-
 from streamlit_autorefresh import st_autorefresh
 
-# =========================
-# Project Imports
-# =========================
+
+# ============================================================
+# PROJECT IMPORTS
+# ============================================================
 
 from signals import get_signals
 
@@ -16,63 +22,78 @@ from paper_trading import PaperTrader
 from trade_manager import TradeManager
 from backtest_engine import BacktestEngine
 
-from ai_decision import ai_decision
-
 from ai_learning import auto_strategy
-from market_memory import best_market_strategy
 
 from auto_mode import (
-    is_enabled,
     enable_auto,
-    disable_auto
+    disable_auto,
 )
 
 from option_chain import scan_all_option_chain
-from fo_symbols import INDICES, FO_STOCKS
+
+from fo_symbols import (
+    INDICES,
+    FO_STOCKS,
+)
 
 from settings_manager import load_settings
 
-# =========================
-# Pages
-# =========================
+
+# ============================================================
+# PAGES
+# ============================================================
 
 from pages.dashboard_page import dashboard_page
 from pages.market_page import market_page
 from pages.portfolio_page import portfolio_page
 from pages.reports_page import reports_page
 from pages.settings_page import settings_page
-from delta_futures import DeltaFutures
-
 from pages.trading_page import trading_page
 
-from index_config import INDIAN_OPTION_INDICES
+
+# ============================================================
+# DELTA FUTURES
+# ============================================================
+
+from delta_futures import DeltaFutures
+
+
+# ============================================================
+# OPTIONS
+# ============================================================
+
 from option_contracts import (
     resolve_option_contract,
     get_lot_size,
     get_strike_modes,
 )
-from multi_index_scanner import (
-    scan_indices,
-    get_best_signal,
-    signal_summary,
-)
 
 
-# =========================
-# Streamlit Configuration
-# =========================
+# ============================================================
+# STREAMLIT CONFIG
+# ============================================================
 
 st.set_page_config(
     page_title="Jha SmartTrader AI Pro",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
 
-# =========================
-# Custom CSS
-# =========================
+# ============================================================
+# LOGGING
+# ============================================================
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s",
+)
+
+
+# ============================================================
+# CSS
+# ============================================================
 
 st.markdown(
     """
@@ -95,295 +116,252 @@ st.markdown(
 
     </style>
     """,
-    unsafe_allow_html=True
+    unsafe_allow_html=True,
 )
 
 
-# =========================
-# Auto Refresh
-# =========================
+# ============================================================
+# AUTO REFRESH
+# ============================================================
 
 try:
     st_autorefresh(
         interval=15000,
-        key="market_refresh"
+        key="market_refresh",
     )
 except Exception:
     pass
 
-# ============================================
-# Session State
-# ============================================
 
-# Paper Trader
-if "trader" not in st.session_state:
-    st.session_state.trader = PaperTrader(
-        initial_balance=100000
-    )
+# ============================================================
+# SAFE FLOAT
+# ============================================================
 
-trader = st.session_state.trader
-
-
-# Trade Manager
-if "trade_manager" not in st.session_state:
-    st.session_state.trade_manager = TradeManager(
-        paper_trader=trader
-    )
-
-trade_manager = st.session_state.trade_manager
-
-# Ensure PaperTrader is connected
-try:
-    trade_manager.set_paper_trader(trader)
-except Exception:
-    pass
-
-
-# Backtester
-if "backtester" not in st.session_state:
-    st.session_state.backtester = BacktestEngine()
-
-backtester = st.session_state.backtester
-# =========================
-# Settings
-# =========================
-
-try:
-    settings = load_settings()
-
-    if not isinstance(settings, dict):
-        settings = {}
-
-except Exception:
-    settings = {}
-    
-# =========================
-# Trailing Stoploss Settings
-# =========================
-
-trailing_enabled = settings.get(
-    "trailing_enabled",
-    False
-)
-
-trailing_start = float(
-    settings.get(
-        "trailing_start",
-        10
-    )
-)
-
-trailing_distance = float(
-    settings.get(
-        "trailing_distance",
-        5
-    )
-)
-
-trade_manager.set_trailing_settings(
-    enabled=trailing_enabled,
-    start=trailing_start,
-    distance=trailing_distance
-)
-
-
-# =========================
-# Sidebar Logo
-# =========================
-
-BASE_DIR = Path(__file__).resolve().parent
-logo_path = BASE_DIR / "logo.png"
-
-if logo_path.exists():
-
+def safe_float(value, default=0.0):
     try:
-        logo_image = Image.open(logo_path)
+        if value is None:
+            return default
 
-        st.sidebar.image(
-            logo_image,
-            width=150
-        )
+        if isinstance(value, str):
+            value = value.strip()
+
+            if not value:
+                return default
+
+            value = value.replace(",", "")
+
+        result = float(value)
+
+        if result != result:
+            return default
+
+        if result in (
+            float("inf"),
+            float("-inf"),
+        ):
+            return default
+
+        return result
 
     except Exception:
-        pass
+        return default
 
 
-# =========================
-# Sidebar Header
-# =========================
+# ============================================================
+# NORMALIZE SIGNAL
+# ============================================================
 
-st.sidebar.markdown(
-    "## 📈 Jha SmartTrader AI Pro"
-)
+def normalize_signal(value):
+    value = str(value or "").upper().strip()
 
-st.sidebar.caption(
-    "AI Powered Trading Terminal"
-)
+    if "BUY" in value and "SELL" not in value:
+        return "BUY"
 
-st.sidebar.divider()
+    if "SELL" in value and "BUY" not in value:
+        return "SELL"
 
-
-# =========================
-# Trading Status
-# =========================
-
-st.sidebar.success(
-    "🟢 Market System : ONLINE"
-)
-
-st.sidebar.info(
-    f"💰 Paper Balance : ₹{getattr(trader, 'balance', 100000):,.2f}"
-)
-
-st.sidebar.write(
-    "🤖 AI Engine : ACTIVE"
-)
-
-st.sidebar.write(
-    "🏦 Broker : "
-    + str(settings.get("broker", "Kotak Neo"))
-)
-
-st.sidebar.divider()
+    return "HOLD"
 
 
-# =========================
-# Navigation
-# =========================
+# ============================================================
+# POSITION SIDE
+# ============================================================
 
-page = st.sidebar.radio(
-    "📂 Navigation",
-    [
-        "🏠 Dashboard",
-        "📈 Market",
-        "💰 Trading",
-        "📦 Portfolio",
-        "📊 Reports",
-        "⚙ Settings"
-    ]
-)
+def normalize_position_side(position):
+    """
+    Normalize BUY/SELL and LONG/SHORT into LONG/SHORT.
 
+    Indian Options:
+        BUY  -> LONG
 
-# =========================
-# Parameters
-# =========================
+    Delta Futures:
+        BUY  -> LONG
+        SELL -> SHORT
+    """
 
-st.sidebar.title("⚙ Parameters")
+    if not isinstance(position, dict):
+        return "LONG"
 
+    raw_position_side = str(
+        position.get(
+            "position_side",
+            ""
+        )
+    ).upper().strip()
 
-# =========================
-# Supported Symbols
-# =========================
+    if raw_position_side in {
+        "LONG",
+        "SHORT",
+    }:
+        return raw_position_side
 
-symbols = [
-    "^NSEI",          # NIFTY
-    "^NSEBANK",       # BANKNIFTY
-    "^CNXFINANCE",    # FINNIFTY
-    "^NSEMDCP50",     # MIDCAP NIFTY
-    "^BSESN",         # SENSEX
+    raw_side = str(
+        position.get(
+            "side",
+            position.get(
+                "action",
+                "BUY"
+            )
+        )
+    ).upper().strip()
 
-    "RELIANCE.NS",
-    "TCS.NS",
-    "INFY.NS",
-    "HDFCBANK.NS",
-    "ICICIBANK.NS",
-    "SBIN.NS",
-    "LT.NS",
-    "AXISBANK.NS",
-]
+    if raw_side in {
+        "SELL",
+        "SHORT",
+    }:
+        return "SHORT"
 
-
-# =========================
-# Symbol
-# =========================
-
-default_symbol = settings.get(
-    "symbol",
-    "^NSEI"
-)
-
-if default_symbol not in symbols:
-    default_symbol = "^NSEI"
+    return "LONG"
 
 
-symbol = st.sidebar.selectbox(
-    "Select Symbol",
-    symbols,
-    index=symbols.index(
-        default_symbol
-    )
-)
+# ============================================================
+# DELTA MARKET DETECTION
+# ============================================================
 
-
-# =========================
-# Strategy
-# =========================
-
-strategies = [
-    "EMA Crossover",
-    "RSI",
-    "SuperTrend",
-    "MACD + Volume",
-    "AI Combo"
-]
-
-
-default_strategy = settings.get(
-    "strategy",
-    "AI Combo"
-)
-
-
-if default_strategy not in strategies:
-    default_strategy = "AI Combo"
-
-
-strategy_name = st.sidebar.selectbox(
-    "Strategy",
-    strategies,
-    index=strategies.index(
-        default_strategy
-    )
-)
-
-
-# =========================
-# AI Strategy
-# =========================
-
-selected_strategy = strategy_name
-
-
-if strategy_name == "AI Combo":
-
+def is_delta_symbol(symbol):
     try:
+        s = str(
+            symbol or ""
+        ).strip().upper()
 
-        ai_result = auto_strategy()
+        if not s:
+            return False
 
-        if ai_result:
+        delta_symbols = {
+            "BTCUSD",
+            "ETHUSD",
+            "SOLUSD",
+            "XRPUSD",
+            "DOGEUSD",
+            "ADAUSD",
+            "BNBUSD",
+            "AVAXUSD",
+            "DOTUSD",
+            "LINKUSD",
+            "MATICUSD",
+            "1000BONKUSD",
+            "1000PEPEUSD",
+            "BTCUSDT",
+            "ETHUSDT",
+        }
 
-            selected_strategy = ai_result
+        if s in delta_symbols:
+            return True
 
-            st.sidebar.success(
-                f"🤖 AI Strategy : {selected_strategy}"
-            )
+        if s.endswith("USD"):
+            return True
 
-        else:
+        if s.endswith("USDT"):
+            return True
 
-            st.sidebar.caption(
-                "AI Strategy : Default"
-            )
+        return False
 
     except Exception:
-
-        st.sidebar.caption(
-            "AI Strategy : Default"
-        )
+        return False
 
 
-# =========================================================
-# OPTION CONFIGURATION
-# =========================================================
+# ============================================================
+# MARKET TIMING
+# ============================================================
+
+def get_market_status(symbol):
+
+    # --------------------------------------------------------
+    # DELTA EXCHANGE
+    # --------------------------------------------------------
+
+    if is_delta_symbol(symbol):
+
+        return {
+            "market": "DELTA",
+            "status": "DELTA_24X7",
+            "market_open": True,
+            "entry_allowed": True,
+            "manage_positions": True,
+            "message": (
+                "🟢 Delta Exchange market is OPEN 24/7."
+            ),
+        }
+
+    # --------------------------------------------------------
+    # INDIAN MARKET
+    # --------------------------------------------------------
+
+    now = datetime.now().time()
+
+    entry_start = time(
+        9,
+        15,
+    )
+
+    entry_end = time(
+        15,
+        30,
+    )
+
+    if now < entry_start:
+
+        return {
+            "market": "INDIA",
+            "status": "PRE_MARKET",
+            "market_open": False,
+            "entry_allowed": False,
+            "manage_positions": False,
+            "message": (
+                "⏰ Indian market opens at 09:15."
+            ),
+        }
+
+    if entry_start <= now < entry_end:
+
+        return {
+            "market": "INDIA",
+            "status": "ENTRY_OPEN",
+            "market_open": True,
+            "entry_allowed": True,
+            "manage_positions": True,
+            "message": (
+                "🟢 Indian market is OPEN."
+            ),
+        }
+
+    return {
+        "market": "INDIA",
+        "status": "MARKET_CLOSED",
+        "market_open": False,
+        "entry_allowed": False,
+        "manage_positions": False,
+        "message": (
+            "🔴 Indian market closed. "
+            "New BUY entry allowed only "
+            "between 09:15 and 15:30."
+        ),
+    }
+
+
+# ============================================================
+# OPTION SYMBOL MAP
+# ============================================================
 
 OPTION_SYMBOL_MAP = {
 
@@ -399,248 +377,382 @@ OPTION_SYMBOL_MAP = {
 }
 
 
+# ============================================================
+# SUPPORTED SYMBOLS
+# ============================================================
+
+symbols = [
+
+    "^NSEI",
+    "^NSEBANK",
+    "^CNXFINANCE",
+    "^NSEMDCP50",
+    "^BSESN",
+
+    "RELIANCE.NS",
+    "TCS.NS",
+    "INFY.NS",
+    "HDFCBANK.NS",
+    "ICICIBANK.NS",
+    "SBIN.NS",
+    "LT.NS",
+    "AXISBANK.NS",
+]
+
+
+# ============================================================
+# LOGO
+# ============================================================
+
+BASE_DIR = Path(
+    __file__
+).resolve().parent
+
+logo_path = (
+    BASE_DIR
+    / "logo.png"
+)
+
+if logo_path.exists():
+
+    try:
+
+        logo_image = Image.open(
+            logo_path
+        )
+
+        st.sidebar.image(
+            logo_image,
+            width=150,
+        )
+
+    except Exception as e:
+
+        logging.warning(
+            f"Logo error: {e}"
+        )
+
+
+# ============================================================
+# SIDEBAR HEADER
+# ============================================================
+
+st.sidebar.markdown(
+    "## 📈 Jha SmartTrader AI Pro"
+)
+
+st.sidebar.caption(
+    "AI Powered Trading Terminal"
+)
+
+st.sidebar.divider()
+
+
+# ============================================================
+# SESSION STATE
+# ============================================================
+
+if "trader" not in st.session_state:
+
+    st.session_state.trader = PaperTrader(
+        initial_balance=100000
+    )
+
+trader = st.session_state.trader
+
+
+if "trade_manager" not in st.session_state:
+
+    st.session_state.trade_manager = TradeManager(
+        paper_trader=trader
+    )
+
+trade_manager = st.session_state.trade_manager
+
+
+try:
+
+    trade_manager.set_paper_trader(
+        trader
+    )
+
+except Exception:
+
+    pass
+
+
+if "backtester" not in st.session_state:
+
+    st.session_state.backtester = BacktestEngine()
+
+backtester = st.session_state.backtester
+
+
+# ============================================================
+# SETTINGS
+# ============================================================
+
+try:
+
+    settings = load_settings()
+
+    if not isinstance(
+        settings,
+        dict
+    ):
+        settings = {}
+
+except Exception:
+
+    settings = {}
+
+
+# ============================================================
+# SYSTEM STATUS
+# ============================================================
+
+st.sidebar.success(
+    "🟢 Market System : ONLINE"
+)
+
+st.sidebar.info(
+    f"💰 Paper Balance : "
+    f"₹{safe_float(trader.balance):,.2f}"
+)
+
+st.sidebar.success(
+    "🤖 AI Engine : ACTIVE"
+)
+
+st.sidebar.info(
+    "🏦 Broker : "
+    + str(
+        settings.get(
+            "broker",
+            "Kotak Neo"
+        )
+    )
+)
+
+st.sidebar.divider()
+
+
+# ============================================================
+# NAVIGATION
+# ============================================================
+
+page = st.sidebar.radio(
+    "📂 Navigation",
+    [
+        "🏠 Dashboard",
+        "📈 Market",
+        "💰 Trading",
+        "📦 Portfolio",
+        "📊 Reports",
+        "⚙ Settings",
+    ],
+)
+
+
+# ============================================================
+# PARAMETERS
+# ============================================================
+
+st.sidebar.title(
+    "⚙ Parameters"
+)
+
+
+# ============================================================
+# SYMBOL
+# ============================================================
+
+default_symbol = settings.get(
+    "symbol",
+    "^NSEI"
+)
+
+if default_symbol not in symbols:
+
+    default_symbol = "^NSEI"
+
+
+symbol = st.sidebar.selectbox(
+    "Select Symbol",
+    symbols,
+    index=symbols.index(
+        default_symbol
+    ),
+)
+
+
+# ============================================================
+# STRATEGY
+# ============================================================
+
+strategies = [
+
+    "EMA Crossover",
+    "RSI",
+    "SuperTrend",
+    "MACD + Volume",
+    "AI Combo",
+]
+
+
+default_strategy = settings.get(
+    "strategy",
+    "AI Combo"
+)
+
+if default_strategy not in strategies:
+
+    default_strategy = "AI Combo"
+
+
+strategy_name = st.sidebar.selectbox(
+    "Strategy",
+    strategies,
+    index=strategies.index(
+        default_strategy
+    ),
+)
+
+
+# ============================================================
+# AI STRATEGY
+# ============================================================
+
+selected_strategy = strategy_name
+
+if strategy_name == "AI Combo":
+
+    try:
+
+        ai_result = auto_strategy()
+
+        if ai_result:
+
+            selected_strategy = str(
+                ai_result
+            )
+
+            st.sidebar.success(
+                "🤖 AI Strategy : "
+                + selected_strategy
+            )
+
+        else:
+
+            st.sidebar.caption(
+                "AI Strategy : Default"
+            )
+
+    except Exception:
+
+        st.sidebar.caption(
+            "AI Strategy : Default"
+        )
+
+
+# ============================================================
+# DEFAULT VARIABLES
+# ============================================================
+
 is_option_index = (
     symbol in OPTION_SYMBOL_MAP
 )
 
+market_type = "INDEX"
 
-# =========================================================
-# Market Type
-# =========================================================
+option_mode = "N/A"
+
+strike_mode = "ATM"
+
+selected_lots = 1
+
+LOT_SIZE = 1
+
+quantity = 1
+
+option_contract = None
+
+option_contract_by_option = {}
+
+price_by_option = {}
+
+underlying_price = 0.0
+
+current_price = 0.0
+
+futures_symbol = None
+
+
+# ============================================================
+# MARKET TYPE
+# ============================================================
 
 if is_option_index:
 
     market_type = st.sidebar.selectbox(
+
         "Market",
+
         [
             "OPTIONS",
             "FUTURES",
-            "INDEX"
+            "INDEX",
         ],
+
         index=0,
-        key="index_market_type"
+
+        key="index_market_type",
     )
 
 else:
 
     market_type = st.sidebar.selectbox(
+
         "Market",
+
         [
             "STOCK",
-            "FUTURES"
+            "FUTURES",
         ],
+
         index=0,
-        key="stock_market_type"
+
+        key="stock_market_type",
     )
 
 
-# =========================================================
-# OPTION PARAMETERS
-# =========================================================
+# ============================================================
+# OPTION CONFIGURATION
+# ============================================================
 
-option_mode = "N/A"
-strike_mode = "ATM"
-selected_lots = 1
-LOT_SIZE = 1
-quantity = 1
-option_contract = None
+if (
+    market_type == "OPTIONS"
+    and is_option_index
+):
 
-
-if market_type == "OPTIONS" and is_option_index:
-
-    index_name = OPTION_SYMBOL_MAP[
-        symbol
-    ]
-
-    LOT_SIZE = get_lot_size(
-        index_name
-    )
-    quantity = (
-        int(selected_lots)
-        * int(LOT_SIZE)
+    index_name = (
+        OPTION_SYMBOL_MAP[
+            symbol
+        ]
     )
 
+    try:
 
-    # -----------------------------------------------------
-    # CE / PE / ALL
-    # -----------------------------------------------------
-
-    option_mode = st.sidebar.selectbox(
-        "Option Mode",
-        [
-            "CE",
-            "PE",
-            "ALL"
-        ],
-        index=2
-    )
-
-
-    # -----------------------------------------------------
-    # Strike
-    # -----------------------------------------------------
-
-    strike_mode = st.sidebar.selectbox(
-        "Strike",
-        get_strike_modes(),
-        index=1
-    )
-
-
-    # -----------------------------------------------------
-    # Lot Size
-    # -----------------------------------------------------
-
-    LOT_SIZE = get_lot_size(
-        index_name
-    )
-
-
-    st.sidebar.caption(
-        f"📦 Lot Size : {LOT_SIZE}"
-    )
-
-
-    # -----------------------------------------------------
-    # Number of Lots
-    # -----------------------------------------------------
-
-    selected_lots = st.sidebar.number_input(
-        "Number of Lots",
-        min_value=1,
-        max_value=100,
-        value=1,
-        step=1
-    )
-
-
-    # -----------------------------------------------------
-    # Quantity
-    # -----------------------------------------------------
-
-    quantity = (
-        int(selected_lots)
-        * int(LOT_SIZE)
-    )
-
-
-    st.sidebar.info(
-        f"🔢 Order Quantity : {quantity}"
-    )
-
-# -----------------------------------------------------
-# Current Underlying Price
-# -----------------------------------------------------
-
-try:
-    underlying_price = float(
-        st.session_state.get(
-            "current_price",
-            0.0
-        )
-    )
-except (TypeError, ValueError):
-    underlying_price = 0.0
-
-
-# -----------------------------------------------------
-# Contract Preview
-# -----------------------------------------------------
-
-if underlying_price > 0:
-
-    if option_mode in ["CE", "PE"]:
-
-        option_contract = resolve_option_contract(
-            index_name=index_name,
-            underlying_price=underlying_price,
-            option_type=option_mode,
-            strike_mode=strike_mode
+        LOT_SIZE = int(
+            get_lot_size(
+                index_name
+            )
         )
 
-        if option_contract:
+    except Exception:
 
-            st.sidebar.success(
-                "📋 Option Contract Ready"
-            )
+        LOT_SIZE = 1
 
-            st.sidebar.caption(
-                f"Index : {index_name}"
-            )
-
-            st.sidebar.caption(
-                f"Underlying : ₹{underlying_price:,.2f}"
-            )
-
-            st.sidebar.caption(
-                f"Type : {option_contract['option_type']}"
-            )
-
-            st.sidebar.caption(
-                f"Strike : {option_contract['strike']}"
-            )
-
-            st.sidebar.caption(
-                f"Mode : {option_contract['strike_mode']}"
-            )
-
-            st.sidebar.caption(
-                f"Lot Size : {option_contract['lot_size']}"
-            )
-
-            st.sidebar.caption(
-                f"Lots : {selected_lots}"
-            )
-
-            st.sidebar.caption(
-                f"Quantity : {quantity}"
-            )
-
-    else:
-
-        st.sidebar.caption(
-            "📋 ALL = CE + PE signals"
-        )
-
-else:
-
-    st.sidebar.info(
-        "⏳ Waiting for market price..."
-    )
-
-
-
-
-# =========================================================
-# NON-OPTION MARKET
-# =========================================================
-
-if market_type != "OPTIONS":
-    option_mode = "N/A"
-    strike_mode = "N/A"
-
-    selected_lots = 1
-    LOT_SIZE = 1
-    quantity = 1
-    
-
-# =========================
-# Option / Futures Settings
-# =========================
-
-# Safe defaults so variables always exist
-option_mode = "N/A"
-selected_lots = 1
-LOT_SIZE = 1
-quantity = 1
-option_side = "N/A"
-strike_mode = "ATM"
-
-if market_type == "OPTIONS":
-
-    # =========================
-    # Option Selector
-    # =========================
 
     options = [
         "CE",
@@ -650,50 +762,111 @@ if market_type == "OPTIONS":
 
     default_option = settings.get(
         "option",
-        "CE"
+        "ALL"
     )
 
     if default_option not in options:
-        default_option = "CE"
+
+        default_option = "ALL"
+
 
     option_mode = st.sidebar.selectbox(
+
         "Option Mode",
+
         options,
-        index=options.index(default_option),
-        key="dashboard_option_mode"
+
+        index=options.index(
+            default_option
+        ),
+
+        key="dashboard_option_mode",
     )
 
-    # =========================
-    # Strike Selector
-    # =========================
 
-    strikes = [
-        "ITM",
-        "ATM",
-        "OTM"
-    ]
+    try:
+
+        strike_modes = (
+            get_strike_modes()
+        )
+
+        if not strike_modes:
+
+            strike_modes = [
+                "ITM",
+                "ATM",
+                "OTM",
+            ]
+
+    except Exception:
+
+        strike_modes = [
+            "ITM",
+            "ATM",
+            "OTM",
+        ]
+
 
     default_strike = settings.get(
         "strike",
         "ATM"
     )
 
-    if default_strike not in strikes:
+    if default_strike not in strike_modes:
+
         default_strike = "ATM"
 
+
     strike_mode = st.sidebar.selectbox(
+
         "Strike",
-        strikes,
-        index=strikes.index(default_strike),
-        key="dashboard_strike_mode"
+
+        strike_modes,
+
+        index=strike_modes.index(
+            default_strike
+        ),
+
+        key="dashboard_strike_mode",
     )
 
-    
-# =========================
-# Delta Futures Settings
-# =========================
 
-else:
+    selected_lots = st.sidebar.number_input(
+
+        "Number of Lots",
+
+        min_value=1,
+
+        max_value=100,
+
+        value=1,
+
+        step=1,
+
+        key="dashboard_lots",
+    )
+
+
+    quantity = (
+        int(selected_lots)
+        * int(LOT_SIZE)
+    )
+
+
+    st.sidebar.caption(
+        f"📦 Lot Size : {LOT_SIZE}"
+    )
+
+    st.sidebar.info(
+        f"🔢 Order Quantity : {quantity}"
+    )
+
+
+# ============================================================
+# FUTURES CONFIGURATION
+# ============================================================
+
+if market_type == "FUTURES":
 
     futures_symbols = []
 
@@ -701,55 +874,61 @@ else:
 
         delta = DeltaFutures()
 
-        futures_data = delta.get_futures()
+        futures_data = (
+            delta.get_futures()
+        )
 
         if futures_data:
 
             for product in futures_data:
 
-                futures_contract_symbol = product.get(
-                    "symbol"
+                if not isinstance(
+                    product,
+                    dict
+                ):
+                    continue
+
+                product_symbol = (
+                    product.get(
+                        "symbol"
+                    )
                 )
 
-                if futures_contract_symbol:
+                if product_symbol:
 
                     futures_symbols.append(
                         str(
-                            futures_contract_symbol
-                        ).strip().upper()
+                            product_symbol
+                        )
+                        .strip()
+                        .upper()
                     )
 
-        # Remove duplicates
         futures_symbols = sorted(
             list(
-                set(futures_symbols)
+                set(
+                    futures_symbols
+                )
             )
         )
 
     except Exception as e:
 
-        st.sidebar.error(
+        st.sidebar.warning(
             f"Delta Futures Error: {e}"
         )
 
         futures_symbols = []
 
 
-    # =========================
-    # Fallback
-    # =========================
-
     if not futures_symbols:
 
         futures_symbols = [
             "BTCUSD",
-            "ETHUSD"
+            "ETHUSD",
+            "1000BONKUSD",
         ]
 
-
-    # =========================
-    # Default Futures
-    # =========================
 
     default_futures = settings.get(
         "futures_symbol",
@@ -763,30 +942,34 @@ else:
         )
 
 
-    # =========================
-    # Futures Selector
-    # =========================
-
     futures_symbol = st.sidebar.selectbox(
+
         "Delta Futures",
+
         futures_symbols,
+
         index=futures_symbols.index(
             default_futures
-        )
+        ),
+
+        key="dashboard_futures_symbol",
     )
 
-    # Futures do not use CE/PE lots
+
     option_mode = "N/A"
-    selected_lots = 1
-    LOT_SIZE = 1
-    quantity = 1
-    option_side = "N/A"
+
     strike_mode = "N/A"
 
+    selected_lots = 1
 
-# =========================
-# Futures Live Price
-# =========================
+    LOT_SIZE = 1
+
+    quantity = 1
+
+
+# ============================================================
+# FUTURES LIVE PRICE
+# ============================================================
 
 if market_type == "FUTURES":
 
@@ -794,100 +977,135 @@ if market_type == "FUTURES":
 
         delta = DeltaFutures()
 
-        # Make sure the selected symbol is clean
-        futures_symbol = str(
-            futures_symbol
-        ).strip().upper()
-
         ticker = delta.get_ticker(
             futures_symbol
         )
 
-        if ticker:
+        if isinstance(
+            ticker,
+            dict
+        ):
 
-            current_price = float(
+            current_price = safe_float(
                 ticker.get(
                     "price",
-                    0
-                ) or 0
+                    ticker.get(
+                        "close",
+                        0
+                    )
+                )
             )
 
-            if current_price > 0:
+        if current_price > 0:
 
-                st.sidebar.success(
-                    f"💰 {futures_symbol} "
-                    f"Price: {current_price:,.8f}"
-                )
-
-            else:
-
-                st.sidebar.warning(
-                    f"⚠️ {futures_symbol} "
-                    "ticker received but price is 0"
-                )
+            st.sidebar.success(
+                f"💰 {futures_symbol} "
+                f"${current_price:,.8f}"
+            )
 
         else:
 
-            current_price = 0.0
-
             st.sidebar.warning(
-                f"⚠️ No market data available "
-                f"for {futures_symbol}"
+                "⚠️ Futures price unavailable"
             )
 
     except Exception as e:
 
         current_price = 0.0
 
-        st.sidebar.error(
-            f"Delta Price Error: {e}"
+        st.sidebar.warning(
+            f"Futures price error: {e}"
         )
 
-# =========================
-# Trading Mode
-# =========================
+
+# ============================================================
+# MARKET STATUS
+# ============================================================
+
+market_status_symbol = (
+    futures_symbol
+    if market_type == "FUTURES"
+    else symbol
+)
+
+market_status = get_market_status(
+    market_status_symbol
+)
+
+
+if market_status["market"] == "DELTA":
+
+    st.sidebar.success(
+        "🟢 DELTA MARKET : 24/7"
+    )
+
+    st.sidebar.caption(
+        "No daily market close"
+    )
+
+else:
+
+    if market_status["status"] == "ENTRY_OPEN":
+
+        st.sidebar.success(
+            "🟢 INDIAN MARKET : OPEN"
+        )
+
+    elif market_status["status"] == "PRE_MARKET":
+
+        st.sidebar.warning(
+            "🟡 INDIAN MARKET : PRE-MARKET"
+        )
+
+    else:
+
+        st.sidebar.error(
+            "🔴 INDIAN MARKET : CLOSED"
+        )
+
+
+# ============================================================
+# TRADING MODE
+# ============================================================
 
 st.sidebar.divider()
-st.sidebar.subheader("🤖 Trading Mode")
 
+st.sidebar.subheader(
+    "🤖 Trading Mode"
+)
 
-# -------------------------
-# Paper Trading
-# -------------------------
 
 paper_trading = st.sidebar.toggle(
     "🟢 Paper Trading",
     value=True,
-    key="paper_trading_switch"
+    key="paper_trading_switch",
 )
-# -------------------------
-# Auto Paper Trading
-# -------------------------
+
 
 auto_paper_trading = st.sidebar.toggle(
     "🟢 Auto Paper Trading",
     value=False,
-    key="auto_paper_trading_switch"
+    key="auto_paper_trading_switch",
 )
 
-# -------------------------
-# Live Auto Trading
-# -------------------------
 
 live_auto_trading = st.sidebar.toggle(
     "🔴 Live Auto Trading",
     value=False,
-    key="live_auto_trading_switch"
+    key="live_auto_trading_switch",
 )
 
 
-# =========================
-# Mode Control
-# =========================
+# ============================================================
+# MODE CONTROL
+# ============================================================
 
 if live_auto_trading:
 
-    enable_auto()
+    try:
+        enable_auto()
+    except Exception:
+        pass
 
     st.sidebar.warning(
         "🔴 LIVE AUTO TRADING : ON"
@@ -895,313 +1113,1658 @@ if live_auto_trading:
 
     live_confirm = st.sidebar.checkbox(
         "I confirm real orders can be placed",
-        key="live_trade_confirmation"
+        key="live_trade_confirmation",
     )
 
     if not live_confirm:
 
-        disable_auto()
+        try:
+            disable_auto()
+        except Exception:
+            pass
 
         st.sidebar.error(
-            "🔒 Live trading locked — confirmation required"
+            "🔒 Live trading locked"
         )
 
 
 elif paper_trading:
 
-    # Never enable broker live auto mode
-    disable_auto()
+    try:
+        disable_auto()
+    except Exception:
+        pass
 
     st.sidebar.success(
         "🟢 PAPER TRADING : ON"
     )
+
     if auto_paper_trading:
 
         st.sidebar.success(
             "🟢 AUTO PAPER TRADING : ON"
         )
 
-
     else:
-         st.sidebar.info(
+
+        st.sidebar.info(
             "⚪ AUTO PAPER TRADING : OFF"
         )
-# =========================================================
+
+
+# ============================================================
 # DASHBOARD
-# =========================================================
+# ============================================================
 
 if page == "🏠 Dashboard":
 
-    # =====================================================
-    # DASHBOARD SIGNAL DATA
-    # =====================================================
+    # ========================================================
+    # GET SIGNAL
+    # ========================================================
 
     try:
+
         if market_type == "FUTURES":
-            signal_data = get_signals(futures_symbol)
+
+            signal_data = get_signals(
+                futures_symbol
+            )
+
         else:
-            signal_data = get_signals(symbol)
+
+            signal_data = get_signals(
+                symbol
+            )
 
     except Exception as e:
-        signal_data = {"error": str(e)}
 
-    if not isinstance(signal_data, dict):
-        signal_data = {"error": "Invalid signal response"}
+        signal_data = {
+            "error": str(e)
+        }
 
 
-    # =====================================================
-    # CURRENT PRICE
-    # =====================================================
+    if not isinstance(
+        signal_data,
+        dict
+    ):
 
-    current_price = 0.0
+        signal_data = {
+            "error": "Invalid signal response"
+        }
 
-    if "error" in signal_data:
+
+    # ========================================================
+    # PRICE
+    # ========================================================
+
+    if signal_data.get("error"):
 
         st.warning(
-            f"⚠️ Market data unavailable: "
-            f"{signal_data.get('error')}"
+            "⚠️ Market data unavailable: "
+            + str(
+                signal_data.get(
+                    "error"
+                )
+            )
         )
 
     else:
 
         if market_type == "FUTURES":
 
-            try:
-                current_price = float(
-                    signal_data.get("Close", 0.0) or 0.0
+            if current_price <= 0:
+
+                current_price = safe_float(
+                    signal_data.get(
+                        "Close",
+                        signal_data.get(
+                            "Price",
+                            0
+                        )
+                    )
                 )
-            except (TypeError, ValueError):
-                current_price = 0.0
 
         else:
 
-            try:
-                current_price = float(
-                    signal_data.get("Close", 0.0) or 0.0
+            current_price = safe_float(
+                signal_data.get(
+                    "Close",
+                    0
                 )
-            except (TypeError, ValueError):
-                current_price = 0.0
+            )
+
+        underlying_price = current_price
 
 
-    # SAVE CURRENT PRICE
-    st.session_state["current_price"] = current_price
+    st.session_state[
+        "current_price"
+    ] = underlying_price
 
-    # =====================================================
+
+    # ========================================================
+    # OPTION CONTRACT
+    # ========================================================
+
+    option_contract = None
+
+    option_contract_by_option = {}
+
+
+    if (
+        market_type == "OPTIONS"
+        and is_option_index
+        and underlying_price > 0
+    ):
+
+        index_name = (
+            OPTION_SYMBOL_MAP[
+                symbol
+            ]
+        )
+
+
+        if option_mode in [
+            "CE",
+            "ALL",
+        ]:
+
+            try:
+
+                ce_contract = (
+                    resolve_option_contract(
+
+                        index_name=index_name,
+
+                        underlying_price=(
+                            underlying_price
+                        ),
+
+                        option_type="CE",
+
+                        strike_mode=strike_mode,
+                    )
+                )
+
+            except Exception as e:
+
+                logging.warning(
+                    f"CE contract error: {e}"
+                )
+
+                ce_contract = None
+
+
+            if ce_contract:
+
+                option_contract_by_option[
+                    "CE"
+                ] = ce_contract
+
+
+        if option_mode in [
+            "PE",
+            "ALL",
+        ]:
+
+            try:
+
+                pe_contract = (
+                    resolve_option_contract(
+
+                        index_name=index_name,
+
+                        underlying_price=(
+                            underlying_price
+                        ),
+
+                        option_type="PE",
+
+                        strike_mode=strike_mode,
+                    )
+                )
+
+            except Exception as e:
+
+                logging.warning(
+                    f"PE contract error: {e}"
+                )
+
+                pe_contract = None
+
+
+            if pe_contract:
+
+                option_contract_by_option[
+                    "PE"
+                ] = pe_contract
+
+
+        if option_mode in [
+            "CE",
+            "PE",
+        ]:
+
+            option_contract = (
+                option_contract_by_option.get(
+                    option_mode
+                )
+            )
+
+
+        # ----------------------------------------------------
+        # OPTION CONTRACT DISPLAY
+        # ----------------------------------------------------
+
+        st.sidebar.divider()
+
+        st.sidebar.subheader(
+            "📦 Option Contract"
+        )
+
+
+        if option_mode == "ALL":
+
+            ce = option_contract_by_option.get(
+                "CE"
+            )
+
+            pe = option_contract_by_option.get(
+                "PE"
+            )
+
+
+            if ce:
+
+                st.sidebar.success(
+                    "🟢 CE Ready"
+                )
+
+                st.sidebar.caption(
+                    f"Strike: {ce.get('strike')}"
+                )
+
+                st.sidebar.caption(
+                    f"Symbol: {ce.get('symbol', 'N/A')}"
+                )
+
+            else:
+
+                st.sidebar.error(
+                    "❌ CE Contract unavailable"
+                )
+
+
+            if pe:
+
+                st.sidebar.success(
+                    "🔴 PE Ready"
+                )
+
+                st.sidebar.caption(
+                    f"Strike: {pe.get('strike')}"
+                )
+
+                st.sidebar.caption(
+                    f"Symbol: {pe.get('symbol', 'N/A')}"
+                )
+
+            else:
+
+                st.sidebar.error(
+                    "❌ PE Contract unavailable"
+                )
+
+
+        elif option_contract:
+
+            st.sidebar.success(
+                "📋 Option Contract Ready"
+            )
+
+            st.sidebar.caption(
+                f"Type: {option_contract.get('option_type')}"
+            )
+
+            st.sidebar.caption(
+                f"Strike: {option_contract.get('strike')}"
+            )
+
+            st.sidebar.caption(
+                f"Mode: {option_contract.get('strike_mode')}"
+            )
+
+            st.sidebar.caption(
+                f"Symbol: {option_contract.get('symbol', 'N/A')}"
+            )
+
+
+    # ========================================================
+    # OPTION PRICES
+    # ========================================================
+
+    price_by_option = {}
+
+    if market_type == "OPTIONS":
+
+        try:
+
+            option_scan = (
+                scan_all_option_chain()
+            )
+
+        except Exception as e:
+
+            option_scan = None
+
+            logging.warning(
+                f"Option chain error: {e}"
+            )
+
+
+        if isinstance(
+            option_scan,
+            dict
+        ):
+
+            selected_index = (
+                OPTION_SYMBOL_MAP.get(
+                    symbol
+                )
+            )
+
+
+            selected_data = (
+                option_scan.get(
+                    selected_index
+                )
+            )
+
+
+            if isinstance(
+                selected_data,
+                dict
+            ):
+
+                for key in [
+                    "CE",
+                    "ce",
+                    "CE_LTP",
+                    "ce_ltp",
+                    "call_ltp",
+                    "call_price",
+                ]:
+
+                    value = safe_float(
+                        selected_data.get(
+                            key,
+                            0
+                        )
+                    )
+
+                    if value > 0:
+
+                        price_by_option[
+                            "CE"
+                        ] = value
+
+                        break
+
+
+                for key in [
+                    "PE",
+                    "pe",
+                    "PE_LTP",
+                    "pe_ltp",
+                    "put_ltp",
+                    "put_price",
+                ]:
+
+                    value = safe_float(
+                        selected_data.get(
+                            key,
+                            0
+                        )
+                    )
+
+                    if value > 0:
+
+                        price_by_option[
+                            "PE"
+                        ] = value
+
+                        break
+
+
+    # ========================================================
+    # OPTION PRICE DISPLAY
+    # ========================================================
+
+    ce_ltp = safe_float(
+        price_by_option.get(
+            "CE",
+            0
+        )
+    )
+
+    pe_ltp = safe_float(
+        price_by_option.get(
+            "PE",
+            0
+        )
+    )
+
+
+    if market_type == "OPTIONS":
+
+        st.sidebar.divider()
+
+        st.sidebar.subheader(
+            "💰 Option LTP"
+        )
+
+
+        if ce_ltp > 0:
+
+            st.sidebar.success(
+                f"🟢 CE LTP : ₹{ce_ltp:,.2f}"
+            )
+
+        else:
+
+            st.sidebar.warning(
+                "⚠️ CE LTP unavailable"
+            )
+
+
+        if pe_ltp > 0:
+
+            st.sidebar.success(
+                f"🔴 PE LTP : ₹{pe_ltp:,.2f}"
+            )
+
+        else:
+
+            st.sidebar.warning(
+                "⚠️ PE LTP unavailable"
+            )
+
+
+        st.session_state[
+            "option_prices"
+        ] = price_by_option
+
+        st.session_state[
+            "option_contracts"
+        ] = option_contract_by_option
+
+
+    # ========================================================
     # SIGNAL
-    # =====================================================
+    # ========================================================
 
     raw_signal = signal_data.get(
-        "signal",
+
+        "SIGNAL",
+
         signal_data.get(
             "Signal",
+
             signal_data.get(
-                "action",
+                "signal",
+                "HOLD"
+            )
+        )
+    )
+
+
+    signal = normalize_signal(
+        raw_signal
+    )
+
+
+    # ========================================================
+    # SIGNAL STRENGTH
+    # ========================================================
+
+    signal_strength = safe_float(
+        signal_data.get(
+            "Signal_Strength",
+            signal_data.get(
+                "Strength",
                 signal_data.get(
-                    "Action",
-                    ""
+                    "Confidence",
+                    0
                 )
             )
         )
     )
 
-    signal = str(raw_signal).upper().strip()
 
-    if "BUY" in signal and "SELL" not in signal:
-        signal = "BUY"
+    # ========================================================
+    # TRADE SYMBOL
+    # ========================================================
 
-    elif "SELL" in signal and "BUY" not in signal:
-        signal = "SELL"
+    if (
+        market_type == "FUTURES"
+        and futures_symbol
+    ):
+
+        trade_symbol = futures_symbol
 
     else:
-        signal = "HOLD"
-
-    # =====================================================
-    # TRADE SYMBOL
-    # =====================================================
-
-    try:
-
-        trade_symbol = (
-            futures_symbol
-            if market_type == "FUTURES" and futures_symbol
-            else symbol
-        )
-
-    except Exception:
 
         trade_symbol = symbol
 
-    # =====================================================
+
+    # ========================================================
+    # MARKET STATUS
+    # ========================================================
+
+    trade_market_status = (
+        get_market_status(
+            trade_symbol
+        )
+    )
+
+
+    # ========================================================
     # AUTO PAPER EXIT
-    # =====================================================
+    # ========================================================
 
     if (
         paper_trading
         and auto_paper_trading
         and not live_auto_trading
-        and current_price > 0
     ):
 
         try:
 
-            exit_ok, exit_result = trade_manager.check_position(
-                current_price=current_price,
-                symbol=trade_symbol,
-                option_mode=option_mode
-            )
-
             if (
-                exit_ok
-                and isinstance(exit_result, dict)
-                and exit_result.get("status") == "EXIT"
+                market_type == "OPTIONS"
+                and option_mode == "ALL"
             ):
 
-                st.success(
-                    f"🎯 AUTO PAPER EXIT: "
-                    f"{exit_result.get('message', exit_result)}"
+                if ce_ltp > 0:
+
+                    trade_manager.check_position(
+                        current_price=ce_ltp,
+                        symbol=trade_symbol,
+                        option_mode="CE",
+                    )
+
+
+                if pe_ltp > 0:
+
+                    trade_manager.check_position(
+                        current_price=pe_ltp,
+                        symbol=trade_symbol,
+                        option_mode="PE",
+                    )
+
+
+            elif (
+                market_type == "OPTIONS"
+                and option_mode in [
+                    "CE",
+                    "PE",
+                ]
+            ):
+
+                option_price = safe_float(
+                    price_by_option.get(
+                        option_mode,
+                        0
+                    )
                 )
+
+
+                if option_price > 0:
+
+                    trade_manager.check_position(
+                        current_price=option_price,
+                        symbol=trade_symbol,
+                        option_mode=option_mode,
+                    )
+
+
+            else:
+
+                if current_price > 0:
+
+                    trade_manager.check_position(
+                        current_price=current_price,
+                        symbol=trade_symbol,
+                        option_mode="N/A",
+                    )
+
 
         except Exception as e:
 
-            st.error(
-                f"❌ Auto Exit Error: {e}"
+            logging.exception(
+                f"Auto exit error: {e}"
             )
 
-    # =====================================================
-    # MARKET CLOSE - 15:30
-    # =====================================================
+
+    # ========================================================
+    # INDIAN MARKET CLOSE
+    # ========================================================
 
     try:
-
-        market_close_time = datetime.strptime(
-            "15:30",
-            "%H:%M"
-        ).time()
-
-        current_time = datetime.now().time()
 
         if (
             paper_trading
             and auto_paper_trading
             and not live_auto_trading
-            and current_time >= market_close_time
+            and trade_market_status["market"] == "INDIA"
+            and trade_market_status["status"] == "MARKET_CLOSED"
         ):
 
-            position_key = (
-                f"{trade_symbol}_{option_mode}"
+            active_positions = (
+                trader.get_active_positions()
             )
 
-            price_map = {
-                position_key: current_price
-            }
 
-            close_result = trader.market_close_auto_exit(
-                price_map=price_map
-            )
+            close_price_map = {}
 
-            if (
-                isinstance(close_result, dict)
-                and close_result.get("count", 0) > 0
+
+            if isinstance(
+                active_positions,
+                dict
             ):
 
-                st.success(
-                    f"🔔 MARKET CLOSE 15:30 | "
-                    f"{close_result.get('count', 0)} "
-                    f"position(s) auto closed."
+                for (
+                    position_key,
+                    position
+                ) in active_positions.items():
+
+                    if not isinstance(
+                        position,
+                        dict
+                    ):
+                        continue
+
+
+                    pos_option = str(
+                        position.get(
+                            "option_mode",
+                            "N/A"
+                        )
+                    ).strip().upper()
+
+
+                    if pos_option == "CE":
+
+                        if ce_ltp > 0:
+
+                            close_price_map[
+                                position_key
+                            ] = ce_ltp
+
+
+                    elif pos_option == "PE":
+
+                        if pe_ltp > 0:
+
+                            close_price_map[
+                                position_key
+                            ] = pe_ltp
+
+
+                    else:
+
+                        if current_price > 0:
+
+                            close_price_map[
+                                position_key
+                            ] = current_price
+
+
+            if close_price_map:
+
+                trader.market_close_auto_exit(
+                    price_map=close_price_map
                 )
+
 
     except Exception as e:
 
-        st.error(
-            f"❌ Market Close Auto Exit Error: {e}"
+        logging.exception(
+            f"Market close error: {e}"
         )
 
-    # =====================================================
+
+    # ========================================================
     # AUTO PAPER ENTRY
-    # =====================================================
+    # ========================================================
 
     if (
         paper_trading
         and auto_paper_trading
         and not live_auto_trading
-        and current_price > 0
-        and signal in ["BUY", "SELL"]
+        and signal in [
+            "BUY",
+            "SELL",
+        ]
     ):
 
         try:
 
-            success, result = trade_manager.process(
-                symbol=trade_symbol,
-                signal=signal,
-                current_price=current_price,
-                capital=trader.balance,
-                option_mode=option_mode,
-                lots=selected_lots,
-                lot_size=LOT_SIZE
-            )
+            # =================================================
+            # OPTIONS ALL
+            # =================================================
 
-            if success:
+            if (
+                market_type == "OPTIONS"
+                and option_mode == "ALL"
+            ):
 
-                st.success(
-                    f"🤖 AUTO PAPER TRADE: {result}"
+                ce_price = safe_float(
+                    price_by_option.get(
+                        "CE",
+                        0
+                    )
                 )
+
+                pe_price = safe_float(
+                    price_by_option.get(
+                        "PE",
+                        0
+                    )
+                )
+
+
+                if signal == "BUY":
+
+                    if (
+                        ce_price <= 0
+                        or pe_price <= 0
+                    ):
+
+                        st.warning(
+                            "⛔ AUTO PAPER ALL blocked: "
+                            "actual CE + PE LTP required."
+                        )
+
+                    else:
+
+                        success, result = (
+                            trade_manager.process(
+
+                                symbol=trade_symbol,
+
+                                signal="BUY",
+
+                                current_price=ce_price,
+
+                                capital=trader.balance,
+
+                                option_mode="ALL",
+
+                                lots=int(
+                                    selected_lots
+                                ),
+
+                                lot_size=int(
+                                    LOT_SIZE
+                                ),
+
+                                price_by_option={
+                                    "CE": ce_price,
+                                    "PE": pe_price,
+                                },
+                            )
+                        )
+
+
+                        if success:
+
+                            st.success(
+                                "🤖 AUTO PAPER ALL: "
+                                + str(result)
+                            )
+
+                        else:
+
+                            st.info(
+                                "ℹ️ AUTO PAPER ALL: "
+                                + str(result)
+                            )
+
+
+                elif signal == "SELL":
+
+                    if (
+                        ce_price <= 0
+                        and pe_price <= 0
+                    ):
+
+                        st.warning(
+                            "⛔ AUTO PAPER EXIT blocked: "
+                            "actual option LTP unavailable."
+                        )
+
+                    else:
+
+                        success, result = (
+                            trade_manager.process(
+
+                                symbol=trade_symbol,
+
+                                signal="SELL",
+
+                                current_price=(
+                                    ce_price
+                                    if ce_price > 0
+                                    else pe_price
+                                ),
+
+                                capital=trader.balance,
+
+                                option_mode="ALL",
+
+                                lots=int(
+                                    selected_lots
+                                ),
+
+                                lot_size=int(
+                                    LOT_SIZE
+                                ),
+
+                                price_by_option={
+                                    "CE": ce_price,
+                                    "PE": pe_price,
+                                },
+                            )
+                        )
+
+
+                        if success:
+
+                            st.success(
+                                "🔴 AUTO PAPER ALL EXIT: "
+                                + str(result)
+                            )
+
+                        else:
+
+                            st.info(
+                                "ℹ️ AUTO PAPER ALL: "
+                                + str(result)
+                            )
+
+
+            # =================================================
+            # OPTIONS CE / PE
+            # =================================================
+
+            elif (
+                market_type == "OPTIONS"
+                and option_mode in [
+                    "CE",
+                    "PE",
+                ]
+            ):
+
+                option_price = safe_float(
+                    price_by_option.get(
+                        option_mode,
+                        0
+                    )
+                )
+
+
+                if option_price <= 0:
+
+                    st.warning(
+                        f"⛔ AUTO PAPER {option_mode} blocked: "
+                        "actual option LTP unavailable."
+                    )
+
+                else:
+
+                    success, result = (
+                        trade_manager.process(
+
+                            symbol=trade_symbol,
+
+                            signal=signal,
+
+                            current_price=option_price,
+
+                            capital=trader.balance,
+
+                            option_mode=option_mode,
+
+                            lots=int(
+                                selected_lots
+                            ),
+
+                            lot_size=int(
+                                LOT_SIZE
+                            ),
+
+                            option_contract=(
+                                option_contract
+                            ),
+                        )
+                    )
+
+
+                    if success:
+
+                        st.success(
+                            "🤖 AUTO PAPER "
+                            f"{option_mode}: "
+                            + str(result)
+                        )
+
+                    else:
+
+                        st.info(
+                            "ℹ️ Trade: "
+                            + str(result)
+                        )
+
+
+            # =================================================
+            # INDEX / STOCK / DELTA FUTURES
+            # =================================================
 
             else:
 
-                st.info(
-                    f"ℹ️ Trade: {result}"
-                )
+                if current_price <= 0:
+
+                    st.warning(
+                        "⚠️ Current market price unavailable."
+                    )
+
+                else:
+
+                    success, result = (
+                        trade_manager.process(
+
+                            symbol=trade_symbol,
+
+                            signal=signal,
+
+                            current_price=current_price,
+
+                            capital=trader.balance,
+
+                            option_mode="N/A",
+
+                            lots=1,
+
+                            lot_size=1,
+                        )
+                    )
+
+
+                    if success:
+
+                        st.success(
+                            "🤖 AUTO PAPER TRADE: "
+                            + str(result)
+                        )
+
+                    else:
+
+                        st.info(
+                            "ℹ️ Trade: "
+                            + str(result)
+                        )
+
 
         except Exception as e:
+
+            logging.exception(
+                f"Auto trade error: {e}"
+            )
 
             st.error(
                 f"❌ Auto Trade Error: {e}"
             )
 
-    # =====================================================
-    # DASHBOARD PAGE
-    # =====================================================
+
+    # ========================================================
+    # MAIN DASHBOARD
+    # ========================================================
+
+    st.title(
+        "📊 SmartTrader Dashboard"
+    )
+
+
+    # ========================================================
+    # MARKET BANNER
+    # ========================================================
+
+    if trade_market_status["market"] == "DELTA":
+
+        st.success(
+            "🟢 DELTA EXCHANGE • MARKET OPEN 24/7"
+        )
+
+    elif trade_market_status["status"] == "ENTRY_OPEN":
+
+        st.success(
+            "🟢 INDIAN MARKET • ENTRY OPEN • 09:15–15:30"
+        )
+
+    elif trade_market_status["status"] == "PRE_MARKET":
+
+        st.warning(
+            "🟡 INDIAN MARKET • PRE-MARKET • Opens 09:15"
+        )
+
+    else:
+
+        st.error(
+            "🔴 INDIAN MARKET • CLOSED • New entries blocked"
+        )
+
+
+    # ========================================================
+    # TOP METRICS
+    # ========================================================
+
+    c1, c2, c3, c4 = st.columns(4)
+
+
+    with c1:
+
+        st.metric(
+            "Symbol",
+            trade_symbol
+        )
+
+
+    with c2:
+
+        if is_delta_symbol(trade_symbol):
+
+            st.metric(
+                "Price",
+                f"${underlying_price:,.8f}"
+            )
+
+        else:
+
+            st.metric(
+                "Price",
+                f"₹{underlying_price:,.2f}"
+            )
+
+
+    with c3:
+
+        st.metric(
+            "Signal",
+            signal
+        )
+
+
+    with c4:
+
+        st.metric(
+            "Strength",
+            f"{signal_strength:.0f}%"
+        )
+
+
+    # ========================================================
+    # OPTION MARKET
+    # ========================================================
+
+    if market_type == "OPTIONS":
+
+        st.markdown(
+            "### 📦 Option Market"
+        )
+
+
+        o1, o2, o3, o4 = st.columns(4)
+
+
+        with o1:
+
+            st.metric(
+                "Underlying",
+                f"₹{underlying_price:,.2f}"
+            )
+
+
+        with o2:
+
+            ce_contract = (
+                option_contract_by_option.get(
+                    "CE"
+                )
+            )
+
+            st.metric(
+                "CE Strike",
+                (
+                    str(
+                        ce_contract.get(
+                            "strike"
+                        )
+                    )
+                    if ce_contract
+                    else "N/A"
+                )
+            )
+
+
+        with o3:
+
+            st.metric(
+                "CE LTP",
+                (
+                    f"₹{ce_ltp:,.2f}"
+                    if ce_ltp > 0
+                    else "N/A"
+                )
+            )
+
+
+        with o4:
+
+            st.metric(
+                "PE LTP",
+                (
+                    f"₹{pe_ltp:,.2f}"
+                    if pe_ltp > 0
+                    else "N/A"
+                )
+            )
+
+
+        if (
+            ce_ltp <= 0
+            or pe_ltp <= 0
+        ):
+
+            st.warning(
+                "⚠️ Actual CE/PE option LTP "
+                "available नहीं है। Auto Paper "
+                "Option Entry blocked है."
+            )
+
+
+    # ========================================================
+    # INDICATORS
+    # ========================================================
+
+    st.markdown(
+        "### 📈 Indicators"
+    )
+
+
+    i1, i2, i3, i4, i5 = st.columns(5)
+
+
+    ema9 = safe_float(
+        signal_data.get(
+            "EMA9",
+            signal_data.get(
+                "EMA_9",
+                0
+            )
+        )
+    )
+
+    ema21 = safe_float(
+        signal_data.get(
+            "EMA21",
+            signal_data.get(
+                "EMA_21",
+                0
+            )
+        )
+    )
+
+    rsi = safe_float(
+        signal_data.get(
+            "RSI",
+            0
+        )
+    )
+
+    macd = safe_float(
+        signal_data.get(
+            "MACD",
+            0
+        )
+    )
+
+    supertrend = safe_float(
+        signal_data.get(
+            "SUPERTREND",
+            signal_data.get(
+                "SUPERTREND_VALUE",
+                signal_data.get(
+                    "SuperTrend",
+                    0
+                )
+            )
+        )
+    )
+
+
+    delta_display = is_delta_symbol(
+        trade_symbol
+    )
+
+
+    with i1:
+
+        if delta_display:
+
+            st.metric(
+                "EMA 9",
+                f"${ema9:,.8f}"
+            )
+
+        else:
+
+            st.metric(
+                "EMA 9",
+                f"₹{ema9:,.2f}"
+            )
+
+
+    with i2:
+
+        if delta_display:
+
+            st.metric(
+                "EMA 21",
+                f"${ema21:,.8f}"
+            )
+
+        else:
+
+            st.metric(
+                "EMA 21",
+                f"₹{ema21:,.2f}"
+            )
+
+
+    with i3:
+
+        st.metric(
+            "RSI",
+            f"{rsi:.2f}"
+        )
+
+
+    with i4:
+
+        if delta_display:
+
+            st.metric(
+                "MACD",
+                f"${macd:,.8f}"
+            )
+
+        else:
+
+            st.metric(
+                "MACD",
+                f"{macd:.4f}"
+            )
+
+
+    with i5:
+
+        if delta_display:
+
+            st.metric(
+                "SuperTrend",
+                f"${supertrend:,.8f}"
+            )
+
+        else:
+
+            st.metric(
+                "SuperTrend",
+                f"₹{supertrend:,.2f}"
+            )
+
+
+    # ========================================================
+    # ACTIVE POSITIONS
+    # ========================================================
+
+    st.markdown(
+        "### 📦 Active Positions"
+    )
+
+
+    try:
+
+        active_positions = (
+            trader.get_active_positions()
+        )
+
+    except Exception as e:
+
+        logging.warning(
+            f"Active positions error: {e}"
+        )
+
+        active_positions = {}
+
+
+    if not isinstance(
+        active_positions,
+        dict
+    ):
+
+        active_positions = {}
+
+
+    if active_positions:
+
+        rows = []
+
+
+        for (
+            position_key,
+            position
+        ) in active_positions.items():
+
+            if not isinstance(
+                position,
+                dict
+            ):
+                continue
+
+
+            pos_symbol = str(
+                position.get(
+                    "symbol",
+                    ""
+                )
+            )
+
+
+            pos_option = str(
+                position.get(
+                    "option_mode",
+                    "N/A"
+                )
+            ).upper()
+
+
+            pos_side = normalize_position_side(
+                position
+            )
+
+
+            entry = safe_float(
+                position.get(
+                    "entry",
+                    0
+                )
+            )
+
+
+            qty = int(
+                safe_float(
+                    position.get(
+                        "qty",
+                        0
+                    )
+                )
+            )
+
+
+            # ------------------------------------------------
+            # CURRENT LTP
+            # ------------------------------------------------
+
+            if (
+                market_type == "OPTIONS"
+                and pos_option == "CE"
+            ):
+
+                ltp = ce_ltp
+
+            elif (
+                market_type == "OPTIONS"
+                and pos_option == "PE"
+            ):
+
+                ltp = pe_ltp
+
+            else:
+
+                ltp = current_price
+
+
+            ltp = safe_float(
+                ltp
+            )
+
+
+            # ------------------------------------------------
+            # P&L
+            # ------------------------------------------------
+
+            if ltp > 0 and qty > 0:
+
+                if pos_side == "SHORT":
+
+                    pnl = (
+                        entry - ltp
+                    ) * qty
+
+                else:
+
+                    pnl = (
+                        ltp - entry
+                    ) * qty
+
+            else:
+
+                pnl = 0.0
+
+
+            # ------------------------------------------------
+            # DISPLAY PRICES
+            # ------------------------------------------------
+
+            stoploss = safe_float(
+                position.get(
+                    "stoploss",
+                    position.get(
+                        "stop_loss",
+                        0
+                    )
+                )
+            )
+
+
+            target = safe_float(
+                position.get(
+                    "target",
+                    0
+                )
+            )
+
+
+            if is_delta_symbol(
+                pos_symbol
+            ):
+
+                entry_display = (
+                    f"${entry:,.8f}"
+                )
+
+                ltp_display = (
+                    f"${ltp:,.8f}"
+                    if ltp > 0
+                    else "N/A"
+                )
+
+                stop_display = (
+                    f"${stoploss:,.8f}"
+                    if stoploss > 0
+                    else "N/A"
+                )
+
+                target_display = (
+                    f"${target:,.8f}"
+                    if target > 0
+                    else "N/A"
+                )
+
+            else:
+
+                entry_display = (
+                    f"₹{entry:,.2f}"
+                )
+
+                ltp_display = (
+                    f"₹{ltp:,.2f}"
+                    if ltp > 0
+                    else "N/A"
+                )
+
+                stop_display = (
+                    f"₹{stoploss:,.2f}"
+                    if stoploss > 0
+                    else "N/A"
+                )
+
+                target_display = (
+                    f"₹{target:,.2f}"
+                    if target > 0
+                    else "N/A"
+                )
+
+
+            rows.append(
+
+                {
+
+                    "Position":
+                        pos_side,
+
+                    "Symbol":
+                        pos_symbol,
+
+                    "Option":
+                        pos_option,
+
+                    "Entry":
+                        entry_display,
+
+                    "LTP":
+                        ltp_display,
+
+                    "Qty":
+                        qty,
+
+                    "Stop Loss":
+                        stop_display,
+
+                    "Target":
+                        target_display,
+
+                    "P&L":
+                        f"₹{pnl:,.2f}",
+
+                }
+
+            )
+
+
+        if rows:
+
+            st.dataframe(
+                rows,
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        else:
+
+            st.info(
+                "No valid active positions."
+            )
+
+    else:
+
+        st.info(
+            "No active positions."
+        )
+
+
+    # ========================================================
+    # DETAILED DASHBOARD PAGE
+    # ========================================================
 
     try:
 
         dashboard_page(
+
             trader=trader,
-            current_price=current_price,
-            symbol=symbol
+
+            current_price=underlying_price,
+
+            symbol=symbol,
+
+            market_type=market_type,
+
+            trade_symbol=trade_symbol,
+
         )
 
     except Exception as e:
 
         st.error(
-            f"❌ Dashboard Error: {e}"
+            f"❌ Dashboard Page Error: {e}"
         )
 
 
-# =========================================================
-# MARKET
-# =========================================================
+# ============================================================
+# MARKET PAGE
+# ============================================================
 
 elif page == "📈 Market":
 
     try:
 
         market_page(
+
             symbol=symbol,
+
             trader=trader,
+
             INDICES=INDICES,
+
             FO_STOCKS=FO_STOCKS,
-            scan_all_option_chain=scan_all_option_chain,
+
+            scan_all_option_chain=(
+                scan_all_option_chain
+            ),
+
             market_type=market_type,
+
             futures_symbol=(
                 futures_symbol
                 if market_type == "FUTURES"
                 else None
             ),
+
             futures_price=(
                 current_price
                 if market_type == "FUTURES"
                 else 0.0
-            )
+            ),
         )
 
     except Exception as e:
@@ -1211,46 +2774,43 @@ elif page == "📈 Market":
         )
 
 
-# =========================================================
-# TRADING
-# =========================================================
+# ============================================================
+# TRADING PAGE
+# ============================================================
 
 elif page == "💰 Trading":
 
-    if trading_page is None:
+    try:
 
-        st.error(
-            "❌ pages/trading_page.py में "
-            "`trading_page()` function नहीं मिला।"
+        trading_page(
+
+            trader=trader,
+
+            symbol=symbol,
+
         )
 
-    else:
+    except Exception as e:
 
-        try:
-
-            trading_page(
-                trader=trader,
-                symbol=symbol
-            )
-
-        except Exception as e:
-
-            st.error(
-                f"❌ Trading Page Error: {e}"
-            )
+        st.error(
+            f"❌ Trading Page Error: {e}"
+        )
 
 
-# =========================================================
-# PORTFOLIO
-# =========================================================
+# ============================================================
+# PORTFOLIO PAGE
+# ============================================================
 
 elif page == "📦 Portfolio":
 
     try:
 
         portfolio_page(
+
             trader=trader,
-            symbol=symbol
+
+            symbol=symbol,
+
         )
 
     except TypeError:
@@ -1274,9 +2834,9 @@ elif page == "📦 Portfolio":
         )
 
 
-# =========================================================
-# REPORTS
-# =========================================================
+# ============================================================
+# REPORTS PAGE
+# ============================================================
 
 elif page == "📊 Reports":
 
@@ -1305,9 +2865,9 @@ elif page == "📊 Reports":
         )
 
 
-# =========================================================
-# SETTINGS
-# =========================================================
+# ============================================================
+# SETTINGS PAGE
+# ============================================================
 
 elif page == "⚙ Settings":
 
@@ -1322,9 +2882,9 @@ elif page == "⚙ Settings":
         )
 
 
-# =========================================================
+# ============================================================
 # FOOTER
-# =========================================================
+# ============================================================
 
 st.divider()
 
@@ -1334,6 +2894,8 @@ st.caption(
 )
 
 st.caption(
-    f"Last Refresh: "
-    f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    "Last Refresh: "
+    + datetime.now().strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
 )

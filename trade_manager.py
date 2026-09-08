@@ -1,917 +1,1289 @@
 import logging
+from datetime import datetime, time
 
 from ai_learning import auto_strategy
 from risk_manager import calculate_trade_details
 from config import LOT_SIZE, MODE
 
-# DEPLOYMENT_REFRESH_2026
+
+logger = logging.getLogger(__name__)
+
 
 class TradeManager:
     """
-    Buyer-Only Options Trade Manager.
+    Central Paper Trading Manager
 
-    Rules:
-    - CE -> BUY only
-    - PE -> BUY only
-    - ALL -> CE + PE BUY positions supported
-    - SELL -> EXIT existing BUY position only
-    - No short selling
-    - PAPER trading only
-    - Automatic SL / Target / Trailing SL
+    Indian Options:
+        CE / PE -> BUY only
+        SELL    -> EXIT existing BUY
+
+    Delta Futures:
+        BUY  -> LONG
+        SELL -> SHORT
+        Opposite signal -> Close existing + Reverse
     """
 
-    def __init__(
-        self,
-        paper_trader=None,
-        trailing_enabled=False,
-        trailing_start=10.0,
-        trailing_distance=5.0
-    ):
+    def __init__(self, paper_trader=None):
+
         self.paper_trader = paper_trader
 
-        self.last_signal = None
+        self.last_signal = {}
         self.last_signals = {}
 
         self.active_position = None
 
-        self.trailing_enabled = bool(trailing_enabled)
-        self.trailing_start = float(trailing_start)
-        self.trailing_distance = float(trailing_distance)
+        self.trailing_enabled = True
+        self.trailing_percent = 0.5
 
-    # =========================================================
+    # ==========================================================
     # PAPER TRADER
-    # =========================================================
+    # ==========================================================
 
     def set_paper_trader(self, paper_trader):
+
         self.paper_trader = paper_trader
 
-    # =========================================================
+    # ==========================================================
     # TRAILING SETTINGS
-    # =========================================================
+    # ==========================================================
 
     def set_trailing_settings(
         self,
-        enabled=False,
-        start=10.0,
-        distance=5.0
+        enabled=True,
+        trailing_percent=0.5,
     ):
+
+        self.trailing_enabled = bool(enabled)
+
         try:
-            start = float(start)
-            distance = float(distance)
+            self.trailing_percent = float(trailing_percent)
+        except Exception:
+            self.trailing_percent = 0.5
 
-            if start <= 0:
-                return False, "Trailing start must be greater than 0"
+    # ==========================================================
+    # DELTA MARKET DETECTOR
+    # ==========================================================
 
-            if distance <= 0:
-                return False, "Trailing distance must be greater than 0"
+    @staticmethod
+    def is_delta_market(symbol):
 
-            if distance >= start:
-                return False, "Trailing distance must be less than trailing start"
+        s = str(symbol or "").strip().upper()
 
-            self.trailing_enabled = bool(enabled)
-            self.trailing_start = start
-            self.trailing_distance = distance
+        delta_symbols = {
+            "BTCUSD",
+            "ETHUSD",
+            "SOLUSD",
+            "XRPUSD",
+            "DOGEUSD",
+            "ADAUSD",
+            "BNBUSD",
+            "AVAXUSD",
+            "DOTUSD",
+            "LINKUSD",
+            "MATICUSD",
 
-            logging.info(
-                f"Trailing settings updated | "
-                f"Enabled={self.trailing_enabled} | "
-                f"Start={start} | "
-                f"Distance={distance}"
+            "1000BONKUSD",
+            "1000PEPEUSD",
+
+            "BTCUSDT",
+            "ETHUSDT",
+        }
+
+        if s in delta_symbols:
+            return True
+
+        if s.endswith("USD"):
+            return True
+
+        if s.endswith("USDT"):
+            return True
+
+        return False
+
+    # ==========================================================
+    # POSITION KEY
+    # ==========================================================
+
+    @staticmethod
+    def _position_key(symbol, option_mode="N/A"):
+
+        return (
+            str(symbol or "").strip().upper(),
+            str(option_mode or "N/A").strip().upper(),
+        )
+
+    # ==========================================================
+    # MARKET TIMING
+    # ==========================================================
+
+    def market_timing(self, symbol=None):
+
+        symbol = str(symbol or "").strip().upper()
+
+        # ------------------------------------------------------
+        # DELTA FUTURES
+        # ------------------------------------------------------
+
+        if self.is_delta_market(symbol):
+
+            return {
+                "market": "DELTA",
+                "status": "OPEN_24X7",
+                "entry_allowed": True,
+                "manage_positions": True,
+                "message": "Delta Futures market is open 24/7.",
+            }
+
+        # ------------------------------------------------------
+        # INDIAN MARKET
+        # ------------------------------------------------------
+
+        now = datetime.now().time()
+
+        market_open = time(9, 15)
+        market_close = time(15, 30)
+
+        if market_open <= now <= market_close:
+
+            return {
+                "market": "INDIA",
+                "status": "MARKET_OPEN",
+                "entry_allowed": True,
+                "manage_positions": True,
+                "message": "Indian market is open.",
+            }
+
+        return {
+            "market": "INDIA",
+            "status": "MARKET_CLOSED",
+            "entry_allowed": False,
+            "manage_positions": True,
+            "message": "Indian market is closed. Trading entry disabled.",
+        }
+
+    # ==========================================================
+    # POSITION HELPERS
+    # ==========================================================
+
+    def _get_position(self, symbol, option_mode="N/A"):
+
+        if not self.paper_trader:
+            return None
+
+        try:
+            return self.paper_trader.get_position(
+                symbol,
+                option_mode,
+            )
+        except Exception as e:
+
+            logger.warning(
+                "Position lookup failed: %s",
+                e,
             )
 
-            return True, "Trailing settings updated"
+            return None
 
-        except Exception as e:
-            return False, f"Trailing settings error: {e}"
-
-    # =========================================================
-    # POSITION KEY
-    # =========================================================
-
-    def _position_key(self, symbol, option_mode):
-        return f"{str(symbol).upper()}_{str(option_mode).upper()}"
-
-    # =========================================================
-    # PROCESS TRADE
-    # =========================================================
+    # ==========================================================
+    # MAIN PROCESS
+    # ==========================================================
 
     def process(
         self,
         symbol,
         signal,
         current_price,
-        capital,
+        capital=100000,
         option_mode="N/A",
         lots=1,
         lot_size=None,
-        price_by_option=None
+        strike=None,
+        expiry=None,
+        option_type=None,
     ):
-        """
-        Main trade processing.
-
-        BUY:
-            Opens BUY position.
-
-        SELL:
-            Closes existing BUY position.
-
-        ALL:
-            Requires separate CE / PE prices when opening
-            both option types.
-        """
 
         try:
-            # -------------------------------------------------
-            # Normalize
-            # -------------------------------------------------
 
-            symbol = str(symbol).strip().upper()
-            signal = str(signal).strip().upper()
-            option_mode = str(option_mode).strip().upper()
+            symbol = str(symbol or "").strip().upper()
 
-            current_price = float(current_price)
-            capital = float(capital)
-            lots = int(lots)
+            signal = str(signal or "HOLD").strip().upper()
+
+            option_mode = str(
+                option_mode or "N/A"
+            ).strip().upper()
+
+            current_price = float(current_price or 0)
+
+            capital = float(capital or 0)
+
+            lots = int(lots or 1)
 
             if lot_size is None:
                 lot_size = LOT_SIZE
 
-            lot_size = int(lot_size)
+            lot_size = int(lot_size or 1)
 
-            # -------------------------------------------------
-            # Validation
-            # -------------------------------------------------
+        except Exception as e:
 
-            if not symbol:
-                return False, "❌ Invalid symbol"
+            logger.exception(
+                "TradeManager input normalization failed"
+            )
 
-            if signal == "HOLD":
-                return False, "HOLD"
+            return False, f"❌ Invalid trade input: {e}"
 
-            if signal not in ("BUY", "SELL"):
-                return False, f"❌ Invalid signal: {signal}"
+        # ------------------------------------------------------
+        # BASIC VALIDATION
+        # ------------------------------------------------------
 
-            if current_price <= 0:
-                return False, "❌ Invalid current price"
+        if not symbol:
 
-            if capital <= 0:
-                return False, "❌ Invalid capital"
+            return False, "❌ Symbol missing."
 
-            if lots <= 0:
-                return False, "❌ Lots must be greater than 0"
+        if signal not in {"BUY", "SELL", "HOLD"}:
 
-            if lot_size <= 0:
-                return False, "❌ Lot size must be greater than 0"
+            return False, f"❌ Invalid signal: {signal}"
 
-            if option_mode not in ("CE", "PE", "ALL", "N/A"):
-                return False, (
-                    "❌ Invalid option mode. "
-                    "Use CE, PE, ALL or N/A."
-                )
+        if signal == "HOLD":
 
-            # -------------------------------------------------
-            # LIVE LOCK
-            # -------------------------------------------------
+            return False, "⏸️ HOLD signal - no trade."
 
-            if MODE != "PAPER":
-                logging.warning(
-                    "LIVE mode requested, but live execution is disabled."
-                )
+        if current_price <= 0:
 
-                return False, (
-                    "🔒 LIVE trading is currently locked. "
-                    "Use PAPER mode for testing."
-                )
+            return False, "❌ Invalid market price."
 
-            # -------------------------------------------------
-            # Paper Trader Check
-            # -------------------------------------------------
+        if self.paper_trader is None:
 
-            if self.paper_trader is None:
-                return False, "❌ PaperTrader is not connected"
+            return False, "❌ PaperTrader is not connected."
 
-            # -------------------------------------------------
-            # Strategy
-            # -------------------------------------------------
+        # ------------------------------------------------------
+        # PAPER MODE CHECK
+        # ------------------------------------------------------
 
-            selected_strategy = "AI Combo"
+        if str(MODE).upper() != "PAPER":
+
+            return (
+                False,
+                "⚠️ Live trading is disabled. MODE must be PAPER.",
+            )
+
+        # ------------------------------------------------------
+        # AI STRATEGY CHECK
+        # ------------------------------------------------------
+
+        try:
+
+            auto_strategy(
+                symbol=symbol,
+                signal=signal,
+                current_price=current_price,
+            )
+
+        except TypeError:
 
             try:
-                selected_strategy = auto_strategy() or "AI Combo"
-            except Exception:
-                selected_strategy = "AI Combo"
 
-            # =================================================
-            # SELL = EXIT ONLY
-            # =================================================
-
-            if signal == "SELL":
-
-                # -------------------------------------------------
-                # ALL = Close CE + PE BUY positions
-                # -------------------------------------------------
-
-                if option_mode == "ALL":
-
-                    positions = self.paper_trader.get_active_positions()
-
-                    if not positions:
-                        return False, "⚠️ No active BUY positions to exit."
-
-                    closed = []
-                    failed = []
-
-                    for key, position in list(positions.items()):
-
-                        position_symbol = str(
-                            position.get("symbol", "")
-                        ).upper()
-
-                        if position_symbol != symbol:
-                            continue
-
-                        position_option = str(
-                            position.get("option_mode", "N/A")
-                        ).upper()
-
-                        exit_price = current_price
-
-                        # Separate price support
-                        if isinstance(price_by_option, dict):
-                            if position_option in price_by_option:
-                                try:
-                                    exit_price = float(
-                                        price_by_option[position_option]
-                                    )
-                                except Exception:
-                                    exit_price = current_price
-
-                        success, result = self.paper_trader.sell(
-                            exit_price,
-                            exit_reason="SIGNAL_SELL",
-                            symbol=symbol,
-                            option_mode=position_option
-                        )
-
-                        if success:
-                            closed.append({
-                                "option_mode": position_option,
-                                "price": exit_price,
-                                "result": result
-                            })
-                        else:
-                            failed.append({
-                                "option_mode": position_option,
-                                "result": result
-                            })
-
-                    if not closed:
-                        return False, (
-                            f"⚠️ No active BUY position found for {symbol}."
-                        )
-
-                    self.active_position = None
-                    self.last_signal = "SELL"
-
-                    return True, {
-                        "action": "SELL",
-                        "type": "EXIT_ONLY",
-                        "symbol": symbol,
-                        "closed_positions": closed,
-                        "failed_positions": failed,
-                        "mode": "PAPER"
-                    }
-
-                # -------------------------------------------------
-                # CE / PE / N/A = Close specific BUY
-                # -------------------------------------------------
-
-                success, result = self.paper_trader.sell(
+                auto_strategy(
+                    symbol,
+                    signal,
                     current_price,
-                    exit_reason="SIGNAL_SELL",
-                    symbol=symbol,
-                    option_mode=option_mode
                 )
 
-                if not success:
-                    return False, result
+            except Exception:
 
-                self.active_position = None
+                pass
 
-                key = self._position_key(symbol, option_mode)
+        except Exception as e:
 
-                self.last_signals[key] = "SELL"
-                self.last_signal = "SELL"
+            logger.warning(
+                "AI strategy check skipped: %s",
+                e,
+            )
 
-                logging.info(
-                    f"🔴 BUY position exited | "
-                    f"Symbol={symbol} | "
-                    f"Option={option_mode} | "
-                    f"Reason=SIGNAL_SELL"
-                )
+        # ======================================================
+        # DELTA FUTURES
+        # ======================================================
 
-                return True, {
-                    "action": "SELL",
-                    "type": "EXIT_ONLY",
-                    "symbol": symbol,
-                    "option_mode": option_mode,
-                    "exit_price": current_price,
-                    "result": result,
-                    "mode": "PAPER"
-                }
+        if self.is_delta_market(symbol):
 
-            # =================================================
-            # BUY
-            # =================================================
+            return self._process_delta(
+                symbol=symbol,
+                signal=signal,
+                current_price=current_price,
+                capital=capital,
+                lots=lots,
+                lot_size=lot_size,
+            )
 
-            if signal == "BUY":
+        # ======================================================
+        # INDIAN OPTIONS
+        # ======================================================
 
-                # -------------------------------------------------
-                # ALL MODE
-                # -------------------------------------------------
+        return self._process_indian_options(
+            symbol=symbol,
+            signal=signal,
+            current_price=current_price,
+            capital=capital,
+            option_mode=option_mode,
+            lots=lots,
+            lot_size=lot_size,
+            strike=strike,
+            expiry=expiry,
+            option_type=option_type,
+        )
 
-                if option_mode == "ALL":
+    # ==========================================================
+    # DELTA PROCESSOR
+    # ==========================================================
 
-                    if not isinstance(price_by_option, dict):
-                        return False, (
-                            "❌ ALL mode requires separate "
-                            "CE and PE prices."
-                        )
+    def _process_delta(
+        self,
+        symbol,
+        signal,
+        current_price,
+        capital,
+        lots=1,
+        lot_size=1,
+    ):
 
-                    results = []
+        timing = self.market_timing(symbol)
 
-                    # ---------------------------------------------
-                    # CE
-                    # ---------------------------------------------
+        if not timing["entry_allowed"]:
 
-                    if "CE" in price_by_option:
+            return (
+                False,
+                f"⏰ {timing['message']}",
+            )
 
-                        try:
-                            ce_price = float(price_by_option["CE"])
-                        except Exception:
-                            ce_price = 0
+        position = self._get_position(
+            symbol,
+            "N/A",
+        )
 
-                        if ce_price > 0:
+        # ------------------------------------------------------
+        # BUY SIGNAL -> LONG
+        # ------------------------------------------------------
 
-                            success, result = self._buy_option(
-                                symbol=symbol,
-                                option_mode="CE",
-                                current_price=ce_price,
-                                capital=capital,
-                                lots=lots,
-                                lot_size=lot_size,
-                                selected_strategy=selected_strategy
-                            )
+        if signal == "BUY":
 
-                            results.append({
-                                "option_mode": "CE",
-                                "success": success,
-                                "result": result
-                            })
+            # No position -> OPEN LONG
+            if not position:
 
-                    # ---------------------------------------------
-                    # PE
-                    # ---------------------------------------------
-
-                    if "PE" in price_by_option:
-
-                        try:
-                            pe_price = float(price_by_option["PE"])
-                        except Exception:
-                            pe_price = 0
-
-                        if pe_price > 0:
-
-                            success, result = self._buy_option(
-                                symbol=symbol,
-                                option_mode="PE",
-                                current_price=pe_price,
-                                capital=capital,
-                                lots=lots,
-                                lot_size=lot_size,
-                                selected_strategy=selected_strategy
-                            )
-
-                            results.append({
-                                "option_mode": "PE",
-                                "success": success,
-                                "result": result
-                            })
-
-                    if not results:
-                        return False, (
-                            "❌ No valid CE/PE price available "
-                            "for ALL mode."
-                        )
-
-                    self.last_signal = "BUY"
-
-                    return True, {
-                        "action": "BUY",
-                        "type": "ALL",
-                        "symbol": symbol,
-                        "results": results,
-                        "mode": "PAPER"
-                    }
-
-                # -------------------------------------------------
-                # CE / PE / N/A
-                # -------------------------------------------------
-
-                return self._buy_option(
+                return self._open_delta_long(
                     symbol=symbol,
-                    option_mode=option_mode,
                     current_price=current_price,
                     capital=capital,
                     lots=lots,
                     lot_size=lot_size,
-                    selected_strategy=selected_strategy
                 )
 
-            return False, "❌ Unknown signal"
+            position_side = str(
+                position.get(
+                    "position_side",
+                    position.get("side", "BUY"),
+                )
+            ).upper()
 
-        except Exception as e:
+            # Existing LONG -> duplicate protection
+            if position_side in {"LONG", "BUY"}:
 
-            logging.exception(
-                "❌ TradeManager process error"
-            )
+                return (
+                    False,
+                    "⚠️ BUY ignored - LONG position already active.",
+                )
 
-            return False, f"TradeManager error: {e}"
+            # Existing SHORT -> CLOSE SHORT + OPEN LONG
+            if position_side in {"SHORT", "SELL"}:
 
-    # =========================================================
-    # BUY OPTION
-    # =========================================================
+                logger.info(
+                    "Delta reversal SHORT -> LONG: %s",
+                    symbol,
+                )
 
-    def _buy_option(
+                closed, close_result = (
+                    self.paper_trader.cover_short(
+                        symbol=symbol,
+                        option_mode="N/A",
+                        current_price=current_price,
+                    )
+                )
+
+                if not closed:
+
+                    return (
+                        False,
+                        f"❌ Unable to close SHORT: {close_result}",
+                    )
+
+                opened, open_result = (
+                    self._open_delta_long(
+                        symbol=symbol,
+                        current_price=current_price,
+                        capital=capital,
+                        lots=lots,
+                        lot_size=lot_size,
+                    )
+                )
+
+                if opened:
+
+                    return (
+                        True,
+                        f"🔄 SHORT → LONG | {open_result}",
+                    )
+
+                return (
+                    False,
+                    f"⚠️ SHORT closed, LONG not opened: {open_result}",
+                )
+
+        # ------------------------------------------------------
+        # SELL SIGNAL -> SHORT
+        # ------------------------------------------------------
+
+        if signal == "SELL":
+
+            # No position -> OPEN SHORT
+            if not position:
+
+                return self._open_delta_short(
+                    symbol=symbol,
+                    current_price=current_price,
+                    capital=capital,
+                    lots=lots,
+                    lot_size=lot_size,
+                )
+
+            position_side = str(
+                position.get(
+                    "position_side",
+                    position.get("side", "BUY"),
+                )
+            ).upper()
+
+            # Existing SHORT -> duplicate protection
+            if position_side in {"SHORT", "SELL"}:
+
+                return (
+                    False,
+                    "⚠️ SELL ignored - SHORT position already active.",
+                )
+
+            # Existing LONG -> CLOSE LONG + OPEN SHORT
+            if position_side in {"LONG", "BUY"}:
+
+                logger.info(
+                    "Delta reversal LONG -> SHORT: %s",
+                    symbol,
+                )
+
+                closed, close_result = (
+                    self.paper_trader.sell(
+                        symbol=symbol,
+                        option_mode="N/A",
+                        current_price=current_price,
+                    )
+                )
+
+                if not closed:
+
+                    return (
+                        False,
+                        f"❌ Unable to close LONG: {close_result}",
+                    )
+
+                opened, open_result = (
+                    self._open_delta_short(
+                        symbol=symbol,
+                        current_price=current_price,
+                        capital=capital,
+                        lots=lots,
+                        lot_size=lot_size,
+                    )
+                )
+
+                if opened:
+
+                    return (
+                        True,
+                        f"🔄 LONG → SHORT | {open_result}",
+                    )
+
+                return (
+                    False,
+                    f"⚠️ LONG closed, SHORT not opened: {open_result}",
+                )
+
+        return False, "⚠️ No valid Delta trade action."
+
+    # ==========================================================
+    # OPEN DELTA LONG
+    # ==========================================================
+
+    def _open_delta_long(
         self,
         symbol,
-        option_mode,
         current_price,
         capital,
-        lots,
-        lot_size,
-        selected_strategy
+        lots=1,
+        lot_size=1,
     ):
+
+        if current_price <= 0:
+
+            return False, "❌ Invalid Delta price."
+
+        # ------------------------------------------------------
+        # Duplicate protection
+        # ------------------------------------------------------
+
+        existing = self._get_position(
+            symbol,
+            "N/A",
+        )
+
+        if existing:
+
+            side = str(
+                existing.get(
+                    "position_side",
+                    existing.get("side", "BUY"),
+                )
+            ).upper()
+
+            if side in {"LONG", "BUY"}:
+
+                return (
+                    False,
+                    "⚠️ LONG position already active.",
+                )
+
+        # ------------------------------------------------------
+        # Delta default risk model
+        #
+        # 1% SL
+        # 2% Target
+        # ------------------------------------------------------
+
+        stop_loss = current_price * 0.99
+        target = current_price * 1.02
+
+        # ------------------------------------------------------
+        # Quantity
+        #
+        # For safe paper execution, at least 1 contract.
+        # ------------------------------------------------------
+
+        quantity = max(
+            1,
+            int(lots) * max(1, int(lot_size)),
+        )
 
         try:
 
-            option_mode = str(option_mode).upper()
-
-            if option_mode not in ("CE", "PE", "N/A"):
-                return False, (
-                    f"❌ Invalid BUY option mode: {option_mode}"
-                )
-
-            current_price = float(current_price)
-
-            if current_price <= 0:
-                return False, "❌ Invalid option price"
-
-            # -------------------------------------------------
-            # Position key
-            # -------------------------------------------------
-
-            key = self._position_key(
-                symbol,
-                option_mode
-            )
-
-            # -------------------------------------------------
-            # Duplicate BUY protection
-            # -------------------------------------------------
-
-            existing = self.paper_trader.get_position(
-                symbol,
-                option_mode
-            )
-
-            if existing is not None:
-                return False, (
-                    f"⚠️ {option_mode} BUY position already active."
-                )
-
-            # -------------------------------------------------
-            # Stoploss
-            # -------------------------------------------------
-            if option_mode == "N/A":
-                stoploss_price = round(
-                    current_price * 0.99,
-                8
-                )
-            else:
-                stoploss_price = round(
-                    current_price * 0.99,
-                    2
-                )
-
-            # -------------------------------------------------
-            # Risk Manager
-            # -------------------------------------------------
-
-            trade = calculate_trade_details(
-                capital=capital,
-                entry_price=current_price,
-                stoploss_price=stoploss_price,
-                lot_size=lot_size,
-                reward_ratio=2.0
-            )
-
-            if not isinstance(trade, dict):
-                return False, "❌ Invalid risk calculation"
-
-            calculated_lots = int(
-                trade.get("lots", 0)
-            )
-
-            if calculated_lots <= 0:
-                return False, (
-                    "⚠️ Risk manager says capital "
-                    "is insufficient."
-                )
-
-            final_lots = min(
-                lots,
-                calculated_lots
-            )
-
-            if final_lots <= 0:
-                return False, "❌ Invalid final lot count"
-
-            quantity = final_lots * lot_size
-
-            # -------------------------------------------------
-            # Target
-            # -------------------------------------------------
-
-            target = float(
-                trade.get("target_price", 0)
-            )
-
-            # Always ensure target is above entry
-            if target <= current_price:
-                target = current_price * 1.02
-
-            # Precision based on instrument
-            if option_mode == "N/A":
-                target = round(target, 8)
-            else:
-                target = round(target, 2)
-
-            # Final safety check
-            if target <= current_price:
-                return False, "❌ Invalid BUY target"
-
-            # -------------------------------------------------
-            # BUY
-            # -------------------------------------------------
-
-            success, message = self.paper_trader.buy(
+            result = self.paper_trader.buy(
                 symbol=symbol,
                 price=current_price,
                 qty=quantity,
+                stoploss=stop_loss,
                 target=target,
-                stoploss=stoploss_price,
+                option_mode="N/A",
                 trailing_enabled=self.trailing_enabled,
-                trailing_start=self.trailing_start,
-                trailing_distance=self.trailing_distance,
-                option_mode=option_mode
+                trailing_percent=self.trailing_percent,
+                strike=None,
+                expiry=None,
+                option_type=None,
             )
 
-            if not success:
-                return False, message
+        except TypeError:
 
-            # -------------------------------------------------
-            # Update position metadata
-            # -------------------------------------------------
-
-            position = self.paper_trader.get_position(
-                symbol,
-                option_mode
+            # Compatibility with older PaperTrader.buy()
+            result = self.paper_trader.buy(
+                symbol=symbol,
+                price=current_price,
+                qty=quantity,
+                stoploss=stop_loss,
+                target=target,
+                option_mode="N/A",
             )
 
-            if position is not None:
+        success, message = self._normalize_trade_result(
+            result
+        )
 
-                position["option_mode"] = option_mode
-                position["lots"] = final_lots
-                position["lot_size"] = lot_size
-                position["strategy"] = selected_strategy
-                position["status"] = "OPEN"
+        if success:
 
-            self.active_position = position
+            self.last_signal[symbol] = "BUY"
+            self.last_signals[symbol] = "BUY"
 
-            self.last_signals[key] = "BUY"
-            self.last_signal = "BUY"
-
-            logging.info(
-                f"🟢 BUY opened | "
-                f"Symbol={symbol} | "
-                f"Option={option_mode} | "
-                f"Lots={final_lots} | "
-                f"Qty={quantity} | "
-                f"Entry={current_price} | "
-                f"SL={stoploss_price} | "
-                f"Target={target}"
+            return (
+                True,
+                f"🟢 DELTA LONG OPENED | "
+                f"{symbol} | "
+                f"Entry ${current_price:.8f} | "
+                f"SL ${stop_loss:.8f} | "
+                f"Target ${target:.8f} | "
+                f"Qty {quantity}",
             )
 
-            return True, {
-                "action": "BUY",
-                "symbol": symbol,
-                "option_mode": option_mode,
-                "lots": final_lots,
-                "lot_size": lot_size,
-                "qty": quantity,
-                "entry": current_price,
-                "stoploss": stoploss_price,
-                "target": target,
-                "strategy": selected_strategy,
-                "risk": trade,
-                "mode": "PAPER"
-            }
+        return (
+            False,
+            f"❌ Delta LONG failed: {message}",
+        )
 
-        except Exception as e:
+    # ==========================================================
+    # OPEN DELTA SHORT
+    # ==========================================================
 
-            logging.exception(
-                "❌ BUY option error"
-            )
-
-            return False, (
-                f"BUY option error: {e}"
-            )
-
-    # =========================================================
-    # GET ACTIVE POSITIONS
-    # =========================================================
-
-    def get_active_position(self):
-
-        try:
-
-            if self.paper_trader is None:
-                return None
-
-            positions = self.paper_trader.get_active_positions()
-
-            if not positions:
-                self.active_position = None
-                return None
-
-            # Compatibility:
-            # return first position
-            self.active_position = next(
-                iter(positions.values())
-            )
-
-            return self.active_position
-
-        except Exception:
-            return self.active_position
-
-    # =========================================================
-    # GET ALL ACTIVE POSITIONS
-    # =========================================================
-
-    def get_active_positions(self):
-
-        try:
-
-            if self.paper_trader is None:
-                return {}
-
-            return self.paper_trader.get_active_positions()
-
-        except Exception as e:
-
-            logging.exception(
-                "❌ Active positions error"
-            )
-
-            return {}
-
-    # =========================================================
-    # CHECK POSITION
-    # =========================================================
-
-    def check_position(
+    def _open_delta_short(
         self,
+        symbol,
         current_price,
-        symbol=None,
-        option_mode=None,
-        price_map=None
+        capital,
+        lots=1,
+        lot_size=1,
     ):
 
+        if current_price <= 0:
+
+            return False, "❌ Invalid Delta price."
+
+        # ------------------------------------------------------
+        # Duplicate protection
+        # ------------------------------------------------------
+
+        existing = self._get_position(
+            symbol,
+            "N/A",
+        )
+
+        if existing:
+
+            side = str(
+                existing.get(
+                    "position_side",
+                    existing.get("side", "BUY"),
+                )
+            ).upper()
+
+            if side in {"SHORT", "SELL"}:
+
+                return (
+                    False,
+                    "⚠️ SHORT position already active.",
+                )
+
+        # ------------------------------------------------------
+        # SHORT risk model
+        #
+        # SL above entry
+        # Target below entry
+        # ------------------------------------------------------
+
+        stop_loss = current_price * 1.01
+        target = current_price * 0.98
+
+        quantity = max(
+            1,
+            int(lots) * max(1, int(lot_size)),
+        )
+
         try:
 
-            if self.paper_trader is None:
-                return False, (
-                    "PaperTrader is not connected"
-                )
-
-            # -------------------------------------------------
-            # Specific position
-            # -------------------------------------------------
-
-            if symbol is not None and option_mode is not None:
-
-                symbol = str(symbol).upper()
-                option_mode = str(option_mode).upper()
-
-                position = self.paper_trader.get_position(
-                    symbol,
-                    option_mode
-                )
-
-                if position is None:
-
-                    return True, {
-                        "status": "NO_POSITION",
-                        "symbol": symbol,
-                        "option_mode": option_mode
-                    }
-
-                price = float(current_price)
-
-                if isinstance(price_map, dict):
-
-                    key = self._position_key(
-                        symbol,
-                        option_mode
-                    )
-
-                    if key in price_map:
-                        price = float(
-                            price_map[key]
-                        )
-
-                exit_result = (
-                    self.paper_trader.auto_exit(
-                        price,
-                        symbol=symbol,
-                        option_mode=option_mode
-                    )
-                )
-
-                position = self.paper_trader.get_position(
-                    symbol,
-                    option_mode
-                )
-
-                if position is None:
-
-                    self.active_position = None
-
-                    return True, {
-                        "status": "EXIT",
-                        "result": exit_result
-                    }
-
-                entry = float(
-                    position.get(
-                        "entry",
-                        price
-                    )
-                )
-
-                qty = int(
-                    position.get(
-                        "qty",
-                        0
-                    )
-                )
-
-                pnl = (
-                    price - entry
-                ) * qty
-
-                self.active_position = position
-
-                return True, {
-                    "status": "HOLD",
-                    "symbol": symbol,
-                    "option_mode": option_mode,
-                    "side": "BUY",
-                    "entry": entry,
-                    "current_price": price,
-                    "qty": qty,
-                    "lots": position.get("lots", 0),
-                    "lot_size": position.get("lot_size", 0),
-                    "stoploss": position.get("stoploss"),
-                    "target": position.get("target"),
-                    "pnl": round(pnl, 2),
-                    "trailing_active": position.get(
-                        "trailing_active",
-                        False
-                    )
-                }
-
-            # -------------------------------------------------
-            # ALL positions
-            # -------------------------------------------------
-
-            positions = self.paper_trader.get_active_positions()
-
-            if not positions:
-
-                self.active_position = None
-
-                return True, {
-                    "status": "NO_POSITION"
-                }
-
-            results = {}
-
-            for key, position in list(positions.items()):
-
-                position_symbol = position.get(
-                    "symbol"
-                )
-
-                position_option = position.get(
-                    "option_mode",
-                    "N/A"
-                )
-
-                price = float(current_price)
-
-                if isinstance(price_map, dict):
-
-                    if key in price_map:
-                        price = float(
-                            price_map[key]
-                        )
-
-                result = self.check_position(
-                    price,
-                    symbol=position_symbol,
-                    option_mode=position_option
-                )
-
-                results[key] = result[1]
-
-            return True, {
-                "status": "MULTIPLE_POSITIONS",
-                "positions": results
-            }
-
-        except Exception as e:
-
-            logging.exception(
-                "❌ Position check error"
+            result = self.paper_trader.short(
+                symbol=symbol,
+                price=current_price,
+                qty=quantity,
+                stoploss=stop_loss,
+                target=target,
+                option_mode="N/A",
+                trailing_enabled=self.trailing_enabled,
+                trailing_percent=self.trailing_percent,
+                strike=None,
+                expiry=None,
+                option_type=None,
             )
 
-            return False, (
-                f"Position check error: {e}"
+        except TypeError:
+
+            result = self.paper_trader.short(
+                symbol=symbol,
+                price=current_price,
+                qty=quantity,
+                stoploss=stop_loss,
+                target=target,
+                option_mode="N/A",
             )
 
-    # =========================================================
-    # CLOSE POSITION
-    # =========================================================
+        success, message = self._normalize_trade_result(
+            result
+        )
 
-    def close_position(
+        if success:
+
+            self.last_signal[symbol] = "SELL"
+            self.last_signals[symbol] = "SELL"
+
+            return (
+                True,
+                f"🔴 DELTA SHORT OPENED | "
+                f"{symbol} | "
+                f"Entry ${current_price:.8f} | "
+                f"SL ${stop_loss:.8f} | "
+                f"Target ${target:.8f} | "
+                f"Qty {quantity}",
+            )
+
+        return (
+            False,
+            f"❌ Delta SHORT failed: {message}",
+        )
+
+    # ==========================================================
+    # INDIAN OPTIONS PROCESSOR
+    # ==========================================================
+
+    def _process_indian_options(
         self,
+        symbol,
+        signal,
         current_price,
-        reason="MANUAL",
-        symbol=None,
-        option_mode=None
+        capital,
+        option_mode,
+        lots=1,
+        lot_size=1,
+        strike=None,
+        expiry=None,
+        option_type=None,
     ):
 
-        try:
+        timing = self.market_timing(symbol)
 
-            if self.paper_trader is None:
-                return False, (
-                    "PaperTrader is not connected"
+        # ------------------------------------------------------
+        # SELL = EXIT ONLY
+        # ------------------------------------------------------
+
+        if signal == "SELL":
+
+            if option_mode == "ALL":
+
+                positions = (
+                    self.paper_trader.get_all_positions()
                 )
 
-            if symbol is None or option_mode is None:
-                return False, (
-                    "❌ Symbol and option mode "
-                    "are required to close a position."
+                closed_count = 0
+
+                for position in positions:
+
+                    pos_symbol = str(
+                        position.get("symbol", "")
+                    ).upper()
+
+                    if pos_symbol != symbol.upper():
+                        continue
+
+                    pos_side = str(
+                        position.get(
+                            "position_side",
+                            position.get("side", "BUY"),
+                        )
+                    ).upper()
+
+                    if pos_side not in {"LONG", "BUY"}:
+                        continue
+
+                    success, _ = (
+                        self.paper_trader.sell(
+                            symbol=symbol,
+                            option_mode=position.get(
+                                "option_mode",
+                                "N/A",
+                            ),
+                            current_price=current_price,
+                        )
+                    )
+
+                    if success:
+                        closed_count += 1
+
+                if closed_count:
+
+                    return (
+                        True,
+                        f"🔴 OPTIONS EXIT | "
+                        f"{symbol} | "
+                        f"{closed_count} position(s) closed.",
+                    )
+
+                return (
+                    False,
+                    "⚠️ No active BUY option position to exit.",
                 )
 
-            success, result = self.paper_trader.sell(
-                float(current_price),
-                exit_reason=reason,
-                symbol=str(symbol).upper(),
-                option_mode=str(option_mode).upper()
+            # Normal CE / PE / N/A
+            success, result = (
+                self.paper_trader.sell(
+                    symbol=symbol,
+                    option_mode=option_mode,
+                    current_price=current_price,
+                )
             )
 
             if success:
 
-                self.active_position = None
-
-                logging.info(
-                    f"🔚 BUY position closed | "
-                    f"Symbol={symbol} | "
-                    f"Option={option_mode} | "
-                    f"Reason={reason} | "
-                    f"Result={result}"
+                return (
+                    True,
+                    f"🔴 OPTION EXIT | "
+                    f"{symbol} {option_mode} | "
+                    f"{result}",
                 )
 
-            return success, result
+            return (
+                False,
+                f"⚠️ {result}",
+            )
+
+        # ------------------------------------------------------
+        # BUY ENTRY MARKET CHECK
+        # ------------------------------------------------------
+
+        if not timing["entry_allowed"]:
+
+            return (
+                False,
+                f"⏰ {timing['message']}",
+            )
+
+        # ------------------------------------------------------
+        # ALL = BUY CE + BUY PE
+        # ------------------------------------------------------
+
+        if option_mode == "ALL":
+
+            results = []
+
+            ce_success, ce_result = (
+                self._buy_option(
+                    symbol=symbol,
+                    current_price=current_price,
+                    capital=capital,
+                    option_mode="CE",
+                    lots=lots,
+                    lot_size=lot_size,
+                    strike=strike,
+                    expiry=expiry,
+                    option_type="CE",
+                )
+            )
+
+            results.append(
+                f"CE: {ce_result}"
+            )
+
+            pe_success, pe_result = (
+                self._buy_option(
+                    symbol=symbol,
+                    current_price=current_price,
+                    capital=capital,
+                    option_mode="PE",
+                    lots=lots,
+                    lot_size=lot_size,
+                    strike=strike,
+                    expiry=expiry,
+                    option_type="PE",
+                )
+            )
+
+            results.append(
+                f"PE: {pe_result}"
+            )
+
+            if ce_success or pe_success:
+
+                return (
+                    True,
+                    "🟢 OPTIONS ALL | "
+                    + " | ".join(results),
+                )
+
+            return (
+                False,
+                "⚠️ OPTIONS ALL | "
+                + " | ".join(results),
+            )
+
+        # ------------------------------------------------------
+        # CE / PE
+        # ------------------------------------------------------
+
+        return self._buy_option(
+            symbol=symbol,
+            current_price=current_price,
+            capital=capital,
+            option_mode=option_mode,
+            lots=lots,
+            lot_size=lot_size,
+            strike=strike,
+            expiry=expiry,
+            option_type=option_type,
+        )
+
+    # ==========================================================
+    # BUY OPTION
+    # ==========================================================
+
+    def _buy_option(
+        self,
+        symbol,
+        current_price,
+        capital,
+        option_mode,
+        lots=1,
+        lot_size=1,
+        strike=None,
+        expiry=None,
+        option_type=None,
+    ):
+
+        option_mode = str(
+            option_mode or "N/A"
+        ).upper()
+
+        if option_mode not in {
+            "CE",
+            "PE",
+            "N/A",
+        }:
+
+            return (
+                False,
+                f"❌ Invalid option mode: {option_mode}",
+            )
+
+        if current_price <= 0:
+
+            return (
+                False,
+                "❌ Invalid option price.",
+            )
+
+        # ------------------------------------------------------
+        # DUPLICATE PROTECTION
+        # ------------------------------------------------------
+
+        existing = self._get_position(
+            symbol,
+            option_mode,
+        )
+
+        if existing:
+
+            return (
+                False,
+                f"⚠️ {option_mode} BUY position already active.",
+            )
+
+        # ------------------------------------------------------
+        # STOP LOSS
+        # ------------------------------------------------------
+
+        stop_loss = current_price * 0.99
+
+        # ------------------------------------------------------
+        # RISK MANAGER
+        # ------------------------------------------------------
+
+        calculated_lots = lots
+
+        target = current_price * 1.02
+
+        try:
+
+            risk_details = calculate_trade_details(
+                entry_price=current_price,
+                stoploss=stop_loss,
+                capital=capital,
+                lot_size=lot_size,
+                reward_ratio=2,
+            )
+
+            if isinstance(risk_details, dict):
+
+                calculated_lots = int(
+                    risk_details.get(
+                        "lots",
+                        risk_details.get(
+                            "quantity_lots",
+                            lots,
+                        ),
+                    )
+                )
+
+                target = float(
+                    risk_details.get(
+                        "target",
+                        risk_details.get(
+                            "take_profit",
+                            target,
+                        ),
+                    )
+                )
 
         except Exception as e:
 
-            logging.exception(
-                "❌ Manual close error"
+            logger.warning(
+                "Risk manager fallback used: %s",
+                e,
+            )
+
+        calculated_lots = max(
+            1,
+            min(
+                int(lots),
+                int(calculated_lots),
+            ),
+        )
+
+        quantity = (
+            calculated_lots
+            * max(1, int(lot_size))
+        )
+
+        # ------------------------------------------------------
+        # PAPER BUY
+        # ------------------------------------------------------
+
+        try:
+
+            result = self.paper_trader.buy(
+                symbol=symbol,
+                price=current_price,
+                qty=quantity,
+                stoploss=stop_loss,
+                target=target,
+                option_mode=option_mode,
+                trailing_enabled=self.trailing_enabled,
+                trailing_percent=self.trailing_percent,
+                strike=strike,
+                expiry=expiry,
+                option_type=option_type,
+            )
+
+        except TypeError:
+
+            result = self.paper_trader.buy(
+                symbol=symbol,
+                price=current_price,
+                qty=quantity,
+                stoploss=stop_loss,
+                target=target,
+                option_mode=option_mode,
+            )
+
+        success, message = self._normalize_trade_result(
+            result
+        )
+
+        if success:
+
+            self.last_signal[
+                f"{symbol}:{option_mode}"
+            ] = "BUY"
+
+            return (
+                True,
+                f"🟢 OPTION BUY | "
+                f"{symbol} {option_mode} | "
+                f"Entry ₹{current_price:.2f} | "
+                f"SL ₹{stop_loss:.2f} | "
+                f"Target ₹{target:.2f} | "
+                f"Qty {quantity}",
+            )
+
+        return (
+            False,
+            f"❌ Option BUY failed: {message}",
+        )
+
+    # ==========================================================
+    # RESULT NORMALIZER
+    # ==========================================================
+
+    @staticmethod
+    def _normalize_trade_result(result):
+
+        if isinstance(result, tuple):
+
+            if len(result) >= 2:
+
+                return (
+                    bool(result[0]),
+                    result[1],
+                )
+
+            if len(result) == 1:
+
+                return (
+                    bool(result[0]),
+                    "",
+                )
+
+        if isinstance(result, bool):
+
+            return result, ""
+
+        if result is None:
+
+            return False, "No result returned."
+
+        return True, str(result)
+
+    # ==========================================================
+    # POSITION CHECK / AUTO EXIT
+    # ==========================================================
+
+    def check_position(
+        self,
+        current_price,
+        symbol,
+        option_mode="N/A",
+    ):
+
+        if not self.paper_trader:
+
+            return False, "PaperTrader unavailable."
+
+        if current_price <= 0:
+
+            return False, "Invalid current price."
+
+        try:
+
+            result = self.paper_trader.auto_exit(
+                symbol=symbol,
+                option_mode=option_mode,
+                current_price=current_price,
+            )
+
+            success, message = (
+                self._normalize_trade_result(result)
+            )
+
+            return success, message
+
+        except TypeError:
+
+            try:
+
+                result = self.paper_trader.auto_exit(
+                    symbol,
+                    option_mode,
+                    current_price,
+                )
+
+                return self._normalize_trade_result(
+                    result
+                )
+
+            except Exception as e:
+
+                logger.exception(
+                    "Auto exit failed"
+                )
+
+                return False, str(e)
+
+        except Exception as e:
+
+            logger.exception(
+                "Auto exit failed"
             )
 
             return False, str(e)
+
+    # ==========================================================
+    # CLOSE POSITION
+    # ==========================================================
+
+    def close_position(
+        self,
+        symbol,
+        option_mode="N/A",
+        current_price=0,
+    ):
+
+        if not self.paper_trader:
+
+            return False, "PaperTrader unavailable."
+
+        position = self._get_position(
+            symbol,
+            option_mode,
+        )
+
+        if not position:
+
+            return False, "No active position."
+
+        side = str(
+            position.get(
+                "position_side",
+                position.get("side", "BUY"),
+            )
+        ).upper()
+
+        try:
+
+            if side in {"SHORT", "SELL"}:
+
+                return self.paper_trader.cover_short(
+                    symbol=symbol,
+                    option_mode=option_mode,
+                    current_price=current_price,
+                )
+
+            return self.paper_trader.sell(
+                symbol=symbol,
+                option_mode=option_mode,
+                current_price=current_price,
+            )
+
+        except Exception as e:
+
+            logger.exception(
+                "Close position failed"
+            )
+
+            return False, str(e)
+
+    # ==========================================================
+    # ACTIVE POSITION
+    # ==========================================================
+
+    def get_active_position(
+        self,
+        symbol,
+        option_mode="N/A",
+    ):
+
+        return self._get_position(
+            symbol,
+            option_mode,
+        )
+
+    # ==========================================================
+    # ALL ACTIVE POSITIONS
+    # ==========================================================
+
+    def get_active_positions(self):
+
+        if not self.paper_trader:
+
+            return []
+
+        try:
+
+            return self.paper_trader.get_all_positions()
+
+        except Exception:
+
+            return []
