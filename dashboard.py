@@ -5,6 +5,7 @@
 
 from pathlib import Path
 from datetime import datetime, time
+from zoneinfo import ZoneInfo
 import logging
 
 import streamlit as st
@@ -287,7 +288,7 @@ def is_delta_symbol(symbol):
 def get_market_status(symbol):
 
     # --------------------------------------------------------
-    # DELTA EXCHANGE
+    # DELTA EXCHANGE — OPEN 24x7
     # --------------------------------------------------------
 
     if is_delta_symbol(symbol):
@@ -304,35 +305,39 @@ def get_market_status(symbol):
         }
 
     # --------------------------------------------------------
-    # INDIAN MARKET
+    # INDIAN MARKET — IST
     # --------------------------------------------------------
 
-    now = datetime.now().time()
+    ist = ZoneInfo("Asia/Kolkata")
+    now = datetime.now(ist).time()
 
-    entry_start = time(
-        9,
-        15,
-    )
+    pre_market_start = time(9, 0)
+    market_open = time(9, 15)
+    market_close = time(15, 30)
 
-    entry_end = time(
-        15,
-        30,
-    )
+    # --------------------------------------------------------
+    # PRE-MARKET — 09:00 to 09:15 IST
+    # --------------------------------------------------------
 
-    if now < entry_start:
+    if pre_market_start <= now < market_open:
 
         return {
             "market": "INDIA",
             "status": "PRE_MARKET",
             "market_open": False,
             "entry_allowed": False,
-            "manage_positions": False,
+            "manage_positions": True,
             "message": (
-                "⏰ Indian market opens at 09:15."
+                "🟡 Indian Market PRE-MARKET • "
+                "Opens 09:15 IST."
             ),
         }
 
-    if entry_start <= now < entry_end:
+    # --------------------------------------------------------
+    # MARKET OPEN — 09:15 to 15:30 IST
+    # --------------------------------------------------------
+
+    if market_open <= now <= market_close:
 
         return {
             "market": "INDIA",
@@ -341,23 +346,26 @@ def get_market_status(symbol):
             "entry_allowed": True,
             "manage_positions": True,
             "message": (
-                "🟢 Indian market is OPEN."
+                "🟢 Indian Market OPEN • "
+                "09:15–15:30 IST."
             ),
         }
+
+    # --------------------------------------------------------
+    # MARKET CLOSED
+    # --------------------------------------------------------
 
     return {
         "market": "INDIA",
         "status": "MARKET_CLOSED",
         "market_open": False,
         "entry_allowed": False,
-        "manage_positions": False,
+        "manage_positions": True,
         "message": (
-            "🔴 Indian market closed. "
-            "New BUY entry allowed only "
-            "between 09:15 and 15:30."
+            "🔴 Indian Market CLOSED • "
+            "Session 09:15–15:30 IST."
         ),
     }
-
 
 # ============================================================
 # OPTION SYMBOL MAP
@@ -2899,9 +2907,12 @@ st.caption(
     "AI Trading Terminal"
 )
 
+ist = ZoneInfo("Asia/Kolkata")
+
 st.caption(
     "Last Refresh: "
-    + datetime.now().strftime(
+    + datetime.now(ist).strftime(
         "%Y-%m-%d %H:%M:%S"
     )
+    + "IST"
 )

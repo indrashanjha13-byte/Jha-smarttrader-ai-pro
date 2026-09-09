@@ -5,6 +5,7 @@
 
 import os
 from datetime import datetime, time
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import plotly.express as px
@@ -329,8 +330,11 @@ def calculate_position_pnl(
 # =========================================================
 # MARKET STATUS
 # =========================================================
-
 def get_market_status(symbol):
+
+    # ========================================================
+    # DELTA EXCHANGE — OPEN 24x7
+    # ========================================================
 
     if is_delta_symbol(symbol):
 
@@ -345,10 +349,37 @@ def get_market_status(symbol):
             ),
         }
 
-    now = datetime.now().time()
+    # ========================================================
+    # INDIAN MARKET — IST
+    # ========================================================
 
+    ist = ZoneInfo("Asia/Kolkata")
+    now = datetime.now(ist).time()
+
+    pre_market_start = time(9, 0)
     market_open = time(9, 15)
     market_close = time(15, 30)
+
+    # ========================================================
+    # PRE-MARKET
+    # ========================================================
+
+    if pre_market_start <= now < market_open:
+
+        return {
+            "market": "INDIA",
+            "status": "PRE-MARKET",
+            "open": False,
+            "entry_allowed": False,
+            "message": (
+                "🟡 INDIAN MARKET • "
+                "PRE-MARKET • Opens 09:15 IST"
+            ),
+        }
+
+    # ========================================================
+    # MARKET OPEN
+    # ========================================================
 
     if market_open <= now <= market_close:
 
@@ -358,9 +389,14 @@ def get_market_status(symbol):
             "open": True,
             "entry_allowed": True,
             "message": (
-                "🟢 INDIAN MARKET • OPEN"
+                "🟢 INDIAN MARKET • "
+                "OPEN • 09:15–15:30 IST"
             ),
         }
+
+    # ========================================================
+    # MARKET CLOSED
+    # ========================================================
 
     return {
         "market": "INDIA",
@@ -368,10 +404,10 @@ def get_market_status(symbol):
         "open": False,
         "entry_allowed": False,
         "message": (
-            "🔴 INDIAN MARKET • CLOSED"
+            "🔴 INDIAN MARKET • "
+            "CLOSED • Session 09:15–15:30 IST"
         ),
     }
-
 
 # =========================================================
 # STATUS RIBBON
@@ -602,15 +638,17 @@ def account_summary(
 
 def market_status(symbol):
 
-    info = get_market_status(
-        symbol
-    )
+    info = get_market_status(symbol)
 
     st.subheader(
         "🟢 Market Status"
     )
 
     c1, c2, c3 = st.columns(3)
+
+    # -----------------------------------------------------
+    # MARKET
+    # -----------------------------------------------------
 
     if info["market"] == "DELTA":
 
@@ -619,30 +657,51 @@ def market_status(symbol):
             "🟢 OPEN 24/7",
         )
 
+    elif info["status"] == "PRE_MARKET":
+
+        c1.metric(
+            "Market",
+            "🟡 PRE-MARKET",
+        )
+
+    elif info["market_open"]:
+
+        c1.metric(
+            "Market",
+            "🟢 OPEN",
+        )
+
     else:
 
         c1.metric(
             "Market",
-            (
-                "🟢 OPEN"
-                if info["open"]
-                else "🔴 CLOSED"
-            ),
+            "🔴 CLOSED",
         )
+
+    # -----------------------------------------------------
+    # IST TIME / DATE
+    # -----------------------------------------------------
+
+    ist = ZoneInfo("Asia/Kolkata")
+    now_ist = datetime.now(ist)
 
     c2.metric(
         "Time",
-        datetime.now().strftime(
+        now_ist.strftime(
             "%H:%M:%S"
-        ),
+        ) + " IST",
     )
 
     c3.metric(
         "Date",
-        datetime.now().strftime(
+        now_ist.strftime(
             "%d-%b-%Y"
         ),
     )
+
+    # -----------------------------------------------------
+    # DELTA
+    # -----------------------------------------------------
 
     if info["market"] == "DELTA":
 
@@ -657,7 +716,27 @@ def market_status(symbol):
             "No daily market close"
         )
 
-    elif info["open"]:
+    # -----------------------------------------------------
+    # INDIAN PRE-MARKET
+    # -----------------------------------------------------
+
+    elif info["status"] == "PRE_MARKET":
+
+        st.warning(
+            "🟡 INDIAN MARKET • PRE-MARKET"
+        )
+
+        st.caption(
+            f"Trading Symbol: {symbol} | "
+            "Pre-Market: 09:00–09:15 IST | "
+            "Normal Market: 09:15–15:30 IST"
+        )
+
+    # -----------------------------------------------------
+    # INDIAN MARKET OPEN
+    # -----------------------------------------------------
+
+    elif info["market_open"]:
 
         st.success(
             "🟢 INDIAN MARKET • OPEN"
@@ -665,8 +744,12 @@ def market_status(symbol):
 
         st.caption(
             f"Trading Symbol: {symbol} | "
-            "Indian session: 09:15–15:30"
+            "Indian session: 09:15–15:30 IST"
         )
+
+    # -----------------------------------------------------
+    # INDIAN MARKET CLOSED
+    # -----------------------------------------------------
 
     else:
 
@@ -676,7 +759,7 @@ def market_status(symbol):
 
         st.caption(
             f"Trading Symbol: {symbol} | "
-            "Indian session: 09:15–15:30"
+            "Indian session: 09:15–15:30 IST"
         )
 
 
@@ -3006,10 +3089,16 @@ def dashboard_page(
     # =====================================================
     # LAST REFRESH
     # =====================================================
+    
+    ist = ZoneInfo("Asia/Kolkata")
 
     st.caption(
-        "Last Refresh: "
-        + datetime.now().strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
+    "Last Refresh: "
+    + datetime.now(ist).strftime(
+        "%Y-%m-%d %H:%M:%S"
     )
+    + " IST"
+)
+
+   
+    
