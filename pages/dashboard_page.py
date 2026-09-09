@@ -71,6 +71,11 @@ def safe_float(value, default=0.0):
         if pd.isna(value):
             return default
 
+        if isinstance(value, (list, tuple)):
+            if not value:
+                return default
+            value = value[0]
+
         return float(value)
 
     except Exception:
@@ -95,7 +100,7 @@ def normalize_signal(value):
 
 def get_position_side(position):
     """
-    Always normalize position to LONG / SHORT.
+    Normalize position direction to LONG / SHORT.
     """
 
     if not isinstance(position, dict):
@@ -139,6 +144,189 @@ def format_pnl(value, delta=False):
 
 
 # =========================================================
+# POSITION HELPERS
+# =========================================================
+
+def get_active_positions(trader):
+    """
+    Return all currently active positions.
+
+    Supports:
+    - PaperTrader.get_active_positions()
+    - trader.positions
+    - legacy trader.position
+    """
+
+    try:
+        positions = trader.get_active_positions()
+
+        if isinstance(positions, dict) and positions:
+            return positions
+
+    except Exception:
+        pass
+
+    positions = getattr(
+        trader,
+        "positions",
+        {},
+    )
+
+    if isinstance(positions, dict) and positions:
+        return positions
+
+    # Legacy single-position fallback
+    position = getattr(
+        trader,
+        "position",
+        None,
+    )
+
+    if isinstance(position, dict) and position:
+
+        position_symbol = str(
+            position.get(
+                "symbol",
+                "",
+            )
+        ).strip().upper()
+
+        option_mode = str(
+            position.get(
+                "option_mode",
+                "N/A",
+            )
+        ).strip().upper()
+
+        if not position_symbol:
+            position_symbol = "UNKNOWN"
+
+        key = (
+            f"{position_symbol}_"
+            f"{option_mode}"
+        )
+
+        return {
+            key: position
+        }
+
+    return {}
+
+
+def get_position_ltp(
+    position_symbol,
+    active_symbol,
+    display_price,
+    entry,
+):
+    """
+    Get latest price for the exact position.
+
+    Priority:
+    1. Signal engine price for exact position symbol
+    2. Dashboard display price if same symbol
+    3. Entry price as final fallback
+    """
+
+    position_symbol = str(
+        position_symbol or ""
+    ).strip().upper()
+
+    active_symbol = str(
+        active_symbol or ""
+    ).strip().upper()
+
+    entry = safe_float(entry)
+
+    # -----------------------------------------------------
+    # 1. Exact symbol from signal engine
+    # -----------------------------------------------------
+
+    if position_symbol:
+
+        try:
+            signal = get_signals(
+                position_symbol
+            )
+
+            if isinstance(signal, dict):
+
+                latest = safe_float(
+                    signal.get(
+                        "Price",
+                        0,
+                    )
+                )
+
+                if latest > 0:
+                    return latest
+
+        except Exception:
+            pass
+
+    # -----------------------------------------------------
+    # 2. Dashboard live price
+    # -----------------------------------------------------
+
+    if position_symbol == active_symbol:
+
+        latest = safe_float(
+            display_price
+        )
+
+        if latest > 0:
+            return latest
+
+    # -----------------------------------------------------
+    # 3. Entry fallback
+    # -----------------------------------------------------
+
+    return entry
+
+
+def calculate_position_pnl(
+    position,
+    ltp,
+):
+    """
+    Calculate P&L for LONG or SHORT position.
+    """
+
+    if not isinstance(position, dict):
+        return 0.0
+
+    entry = safe_float(
+        position.get(
+            "entry",
+            0,
+        )
+    )
+
+    qty = safe_float(
+        position.get(
+            "qty",
+            position.get(
+                "quantity",
+                0,
+            ),
+        )
+    )
+
+    side = get_position_side(
+        position
+    )
+
+    if side == "SHORT":
+        return (
+            entry - ltp
+        ) * qty
+
+    return (
+        ltp - entry
+    ) * qty
+
+
+# =========================================================
 # MARKET STATUS
 # =========================================================
 
@@ -151,7 +339,10 @@ def get_market_status(symbol):
             "status": "OPEN_24X7",
             "open": True,
             "entry_allowed": True,
-            "message": "🟢 DELTA EXCHANGE • MARKET OPEN 24/7",
+            "message": (
+                "🟢 DELTA EXCHANGE • "
+                "MARKET OPEN 24/7"
+            ),
         }
 
     now = datetime.now().time()
@@ -166,7 +357,9 @@ def get_market_status(symbol):
             "status": "OPEN",
             "open": True,
             "entry_allowed": True,
-            "message": "🟢 INDIAN MARKET • OPEN",
+            "message": (
+                "🟢 INDIAN MARKET • OPEN"
+            ),
         }
 
     return {
@@ -174,7 +367,9 @@ def get_market_status(symbol):
         "status": "CLOSED",
         "open": False,
         "entry_allowed": False,
-        "message": "🔴 INDIAN MARKET • CLOSED",
+        "message": (
+            "🔴 INDIAN MARKET • CLOSED"
+        ),
     }
 
 
@@ -187,7 +382,9 @@ def status_ribbon():
     c1, c2, c3, c4, c5 = st.columns(5)
 
     try:
-        broker = BrokerManager(config.BROKER)
+        broker = BrokerManager(
+            config.BROKER
+        )
     except Exception:
         broker = None
 
@@ -224,13 +421,29 @@ def status_ribbon():
             else "🔴 NOT CONNECTED"
         )
 
-    c1.info(f"🏦 {config.BROKER}")
-    c1.caption(broker_status)
+    c1.info(
+        f"🏦 {config.BROKER}"
+    )
 
-    c2.success("🟢 Market")
-    c3.info("🤖 AI")
-    c4.warning("⚙ Auto")
-    c5.success("📱 Telegram")
+    c1.caption(
+        broker_status
+    )
+
+    c2.success(
+        "🟢 Market"
+    )
+
+    c3.info(
+        "🤖 AI"
+    )
+
+    c4.warning(
+        "⚙ Auto"
+    )
+
+    c5.success(
+        "📱 Telegram"
+    )
 
 
 # =========================================================
@@ -251,11 +464,59 @@ def account_summary(
         )
     )
 
-    position = getattr(
-        trader,
-        "position",
-        None,
+    active_positions = get_active_positions(
+        trader
     )
+
+    position = None
+
+    # -----------------------------------------------------
+    # Prefer position matching current dashboard symbol
+    # -----------------------------------------------------
+
+    active_symbol = str(
+        symbol or ""
+    ).strip().upper()
+
+    for candidate in active_positions.values():
+
+        if not isinstance(
+            candidate,
+            dict,
+        ):
+            continue
+
+        candidate_symbol = str(
+            candidate.get(
+                "symbol",
+                "",
+            )
+        ).strip().upper()
+
+        if candidate_symbol == active_symbol:
+
+            position = candidate
+            break
+
+    # -----------------------------------------------------
+    # Otherwise use first active position
+    # -----------------------------------------------------
+
+    if position is None:
+
+        for candidate in active_positions.values():
+
+            if isinstance(
+                candidate,
+                dict,
+            ):
+
+                position = candidate
+                break
+
+    # -----------------------------------------------------
+    # Display position
+    # -----------------------------------------------------
 
     if position:
 
@@ -264,7 +525,7 @@ def account_summary(
                 "symbol",
                 symbol,
             )
-        ).upper()
+        ).strip().upper()
 
         position_side = get_position_side(
             position
@@ -277,42 +538,25 @@ def account_summary(
             )
         )
 
-        qty = safe_float(
-            position.get(
-                "qty",
-                position.get(
-                    "quantity",
-                    0,
-                ),
-            )
+        ltp = get_position_ltp(
+            position_symbol=position_symbol,
+            active_symbol=active_symbol,
+            display_price=current_price,
+            entry=entry,
         )
 
-        ltp = safe_float(
-            current_price,
-            entry,
+        pnl = calculate_position_pnl(
+            position,
+            ltp,
         )
-
-        if ltp <= 0:
-            ltp = entry
-
-        if position_side == "SHORT":
-
-            pnl = (
-                entry - ltp
-            ) * qty
-
-        else:
-
-            pnl = (
-                ltp - entry
-            ) * qty
 
         delta = is_delta_symbol(
             position_symbol
         )
 
         position_text = (
-            f"{position_symbol} • {position_side}"
+            f"{position_symbol} • "
+            f"{position_side}"
         )
 
         pnl_text = format_pnl(
@@ -324,6 +568,10 @@ def account_summary(
 
         position_text = "No Position"
         pnl_text = "₹0.00"
+
+    # -----------------------------------------------------
+    # Summary cards
+    # -----------------------------------------------------
 
     c1, c2, c3, c4 = st.columns(4)
 
@@ -375,9 +623,11 @@ def market_status(symbol):
 
         c1.metric(
             "Market",
-            "🟢 OPEN"
-            if info["open"]
-            else "🔴 CLOSED",
+            (
+                "🟢 OPEN"
+                if info["open"]
+                else "🔴 CLOSED"
+            ),
         )
 
     c2.metric(
@@ -397,12 +647,14 @@ def market_status(symbol):
     if info["market"] == "DELTA":
 
         st.success(
-            "🟢 DELTA EXCHANGE • MARKET OPEN 24/7"
+            "🟢 DELTA EXCHANGE • "
+            "MARKET OPEN 24/7"
         )
 
         st.caption(
             f"Trading Symbol: {symbol} | "
-            "Crypto Futures • No daily market close"
+            "Crypto Futures • "
+            "No daily market close"
         )
 
     elif info["open"]:
@@ -458,7 +710,8 @@ def signal_indicators(symbol):
         if "error" in signal:
 
             st.error(
-                f"Signal Error: {signal.get('error')}"
+                f"Signal Error: "
+                f"{signal.get('error')}"
             )
 
             return signal
@@ -638,15 +891,18 @@ def signal_indicators(symbol):
             if delta:
 
                 st.success(
-                    f"🟢 DELTA FUTURES BUY / LONG • "
-                    f"{symbol} • {strength:.1f}%"
+                    f"🟢 DELTA FUTURES "
+                    f"BUY / LONG • "
+                    f"{symbol} • "
+                    f"{strength:.1f}%"
                 )
 
             else:
 
                 st.success(
                     f"🟢 BUY SIGNAL • "
-                    f"{symbol} • {strength:.1f}%"
+                    f"{symbol} • "
+                    f"{strength:.1f}%"
                 )
 
         elif decision == "SELL":
@@ -654,22 +910,26 @@ def signal_indicators(symbol):
             if delta:
 
                 st.error(
-                    f"🔴 DELTA FUTURES SELL / SHORT • "
-                    f"{symbol} • {strength:.1f}%"
+                    f"🔴 DELTA FUTURES "
+                    f"SELL / SHORT • "
+                    f"{symbol} • "
+                    f"{strength:.1f}%"
                 )
 
             else:
 
                 st.error(
                     f"🔴 SELL SIGNAL • "
-                    f"{symbol} • {strength:.1f}%"
+                    f"{symbol} • "
+                    f"{strength:.1f}%"
                 )
 
         else:
 
             st.warning(
                 f"🟡 HOLD / WAIT • "
-                f"{symbol} • {strength:.1f}%"
+                f"{symbol} • "
+                f"{strength:.1f}%"
             )
 
         st.divider()
@@ -820,7 +1080,8 @@ def signal_indicators(symbol):
                 st.caption(
                     f"Technical Signal: "
                     f"{decision} • "
-                    f"Strength: {strength:.1f}%"
+                    f"Strength: "
+                    f"{strength:.1f}%"
                 )
 
                 if ai_reason:
@@ -832,7 +1093,8 @@ def signal_indicators(symbol):
         except Exception as e:
 
             st.caption(
-                f"AI decision detail unavailable: {e}"
+                "AI decision detail unavailable: "
+                f"{e}"
             )
 
         # -------------------------------------------------
@@ -1050,7 +1312,8 @@ def delta_chart(symbol):
     )
 
     st.caption(
-        "Delta Exchange crypto futures are available 24/7."
+        "Delta Exchange crypto futures "
+        "are available 24/7."
     )
 
     try:
@@ -1083,7 +1346,10 @@ def delta_chart(symbol):
             data.columns = [
                 str(
                     col[0]
-                    if isinstance(col, tuple)
+                    if isinstance(
+                        col,
+                        tuple,
+                    )
                     else col
                 )
                 for col in data.columns
@@ -1141,7 +1407,8 @@ def delta_chart(symbol):
         if time_col is None:
 
             st.error(
-                "Delta Chart Error: Candle time column not found."
+                "Delta Chart Error: "
+                "Candle time column not found."
             )
 
             return
@@ -1196,7 +1463,8 @@ def delta_chart(symbol):
         if missing:
 
             st.error(
-                "Delta Chart Error: Missing columns: "
+                "Delta Chart Error: "
+                "Missing columns: "
                 + ", ".join(missing)
             )
 
@@ -1353,6 +1621,14 @@ def indian_chart(symbol):
             "Low",
             "Close",
         ]:
+
+            if col not in data.columns:
+
+                st.warning(
+                    f"Missing chart column: {col}"
+                )
+
+                return
 
             data[col] = pd.to_numeric(
                 data[col],
@@ -1524,14 +1800,18 @@ def multi_index_scanner():
                         .get_level_values(0)
                     )
 
-                close_value = data["Close"].iloc[-1]
+                close_value = (
+                    data["Close"].iloc[-1]
+                )
 
                 if hasattr(
                     close_value,
                     "iloc",
                 ):
 
-                    close_value = close_value.iloc[0]
+                    close_value = (
+                        close_value.iloc[0]
+                    )
 
                 current_price = safe_float(
                     close_value
@@ -1609,6 +1889,7 @@ def multi_index_scanner():
                     ai,
                     dict,
                 ):
+
                     continue
 
                 decision = normalize_signal(
@@ -1668,15 +1949,21 @@ def multi_index_scanner():
 
                 if decision == "BUY":
 
-                    option_signal = "🟢 BUY CE"
+                    option_signal = (
+                        "🟢 BUY CE"
+                    )
 
                 elif decision == "SELL":
 
-                    option_signal = "🔴 BUY PE"
+                    option_signal = (
+                        "🔴 BUY PE"
+                    )
 
                 else:
 
-                    option_signal = "🟡 WAIT"
+                    option_signal = (
+                        "🟡 WAIT"
+                    )
 
                 scanner_rows.append(
                     {
@@ -1730,11 +2017,8 @@ def multi_index_scanner():
         scanner_rows
     )
 
-    st.dataframe(
-        df,
-        use_container_width=True,
-        hide_index=True,
-    )
+    # FIX: avoid Streamlit dataframe/canvas artifact
+    st.table(df)
 
     best = max(
         scanner_rows,
@@ -1770,8 +2054,8 @@ def option_chain_ai(
         )
 
         st.caption(
-            f"{active_symbol} is a Delta Futures contract. "
-            "Use BUY/SELL Futures execution instead."
+            f"{active_symbol} is a Delta Futures "
+            "contract. Use BUY/SELL Futures execution."
         )
 
         return
@@ -1826,11 +2110,24 @@ def option_chain_ai(
 
         else:
 
-            st.warning(
-                option.get(
+            if isinstance(
+                option,
+                dict,
+            ):
+
+                message = option.get(
                     "error",
                     "Option Chain unavailable.",
                 )
+
+            else:
+
+                message = (
+                    "Option Chain unavailable."
+                )
+
+            st.warning(
+                message
             )
 
     except Exception as e:
@@ -1855,66 +2152,9 @@ def portfolio_section(
         "📦 Portfolio & Risk Management"
     )
 
-    # -----------------------------------------------------
-    # Get all positions
-    # -----------------------------------------------------
-
-    try:
-
-        active_positions = (
-            trader.get_active_positions()
-        )
-
-    except Exception:
-
-        active_positions = getattr(
-            trader,
-            "positions",
-            {},
-        )
-
-    if not isinstance(
-        active_positions,
-        dict,
-    ):
-
-        active_positions = {}
-
-    # -----------------------------------------------------
-    # Fallback
-    # -----------------------------------------------------
-
-    if not active_positions:
-
-        position = getattr(
-            trader,
-            "position",
-            None,
-        )
-
-        if position:
-
-            position_symbol = str(
-                position.get(
-                    "symbol",
-                    active_symbol,
-                )
-            ).upper()
-
-            option_mode = str(
-                position.get(
-                    "option_mode",
-                    "N/A",
-                )
-            ).upper()
-
-            key = (
-                f"{position_symbol}_{option_mode}"
-            )
-
-            active_positions = {
-                key: position
-            }
+    active_positions = get_active_positions(
+        trader
+    )
 
     if not active_positions:
 
@@ -1924,11 +2164,18 @@ def portfolio_section(
 
         return
 
-    # -----------------------------------------------------
-    # Build rows
-    # -----------------------------------------------------
-
     rows = []
+
+    total_delta_pnl = 0.0
+    total_india_pnl = 0.0
+
+    active_symbol_upper = str(
+        active_symbol or ""
+    ).strip().upper()
+
+    # -----------------------------------------------------
+    # Process every position exactly once
+    # -----------------------------------------------------
 
     for _, position in active_positions.items():
 
@@ -1941,9 +2188,12 @@ def portfolio_section(
         position_symbol = str(
             position.get(
                 "symbol",
-                active_symbol,
+                active_symbol_upper,
             )
-        ).upper()
+        ).strip().upper()
+
+        if not position_symbol:
+            continue
 
         position_side = get_position_side(
             position
@@ -1954,7 +2204,7 @@ def portfolio_section(
                 "option_mode",
                 "N/A",
             )
-        ).upper()
+        ).strip().upper()
 
         entry = safe_float(
             position.get(
@@ -1998,66 +2248,36 @@ def portfolio_section(
         )
 
         # -------------------------------------------------
-        # Current LTP
+        # Exact LTP
         # -------------------------------------------------
 
-        ltp = safe_float(
-            display_price,
-            entry,
+        ltp = get_position_ltp(
+            position_symbol=position_symbol,
+            active_symbol=active_symbol_upper,
+            display_price=display_price,
+            entry=entry,
         )
 
-        # If this is not the active symbol, try to get
-        # its own latest signal price.
-        if (
-            position_symbol != str(
-                active_symbol
-            ).upper()
-        ):
-
-            try:
-
-                position_signal = get_signals(
-                    position_symbol
-                )
-
-                if isinstance(
-                    position_signal,
-                    dict,
-                ):
-
-                    signal_ltp = safe_float(
-                        position_signal.get(
-                            "Price",
-                            0,
-                        )
-                    )
-
-                    if signal_ltp > 0:
-
-                        ltp = signal_ltp
-
-            except Exception:
-                pass
-
-        if ltp <= 0:
-
-            ltp = entry
-
         # -------------------------------------------------
-        # P&L
+        # Exact P&L
         # -------------------------------------------------
 
-        if position_side == "SHORT":
+        pnl = calculate_position_pnl(
+            position,
+            ltp,
+        )
 
-            pnl = (
-                entry - ltp
-            ) * qty
+        # -------------------------------------------------
+        # Market-wise totals
+        # -------------------------------------------------
+
+        if position_delta:
+
+            total_delta_pnl += pnl
 
         else:
 
-            pnl = (
-                ltp - entry
-            ) * qty
+            total_india_pnl += pnl
 
         # -------------------------------------------------
         # Row
@@ -2092,6 +2312,10 @@ def portfolio_section(
             }
         )
 
+    # -----------------------------------------------------
+    # No valid positions
+    # -----------------------------------------------------
+
     if not rows:
 
         st.info(
@@ -2101,114 +2325,70 @@ def portfolio_section(
         return
 
     # -----------------------------------------------------
-    # Table
+    # Portfolio table
     # -----------------------------------------------------
 
     portfolio_df = pd.DataFrame(
         rows
     )
 
-    st.dataframe(
-        portfolio_df,
-        use_container_width=True,
-        hide_index=True,
-    )
+    # FIX: replace dataframe to remove canvas artifact
+    st.table(portfolio_df)
 
     # -----------------------------------------------------
-    # Position summary
+    # Detect available markets
     # -----------------------------------------------------
 
-    total_pnl = 0.0
+    has_delta = False
+    has_india = False
 
-    for _, position in active_positions.items():
+    for row in rows:
 
-        if not isinstance(
-            position,
-            dict,
+        if is_delta_symbol(
+            row["Symbol"]
         ):
-            continue
 
-        position_symbol = str(
-            position.get(
-                "symbol",
-                active_symbol,
-            )
-        ).upper()
+            has_delta = True
 
-        position_side = get_position_side(
-            position
+        else:
+
+            has_india = True
+
+    # -----------------------------------------------------
+    # Market-wise P&L
+    # -----------------------------------------------------
+
+    if has_delta and has_india:
+
+        c1, c2 = st.columns(2)
+
+    else:
+
+        c1 = st.container()
+        c2 = None
+
+    if has_delta:
+
+        c1.metric(
+            "📊 Delta Total Open P&L",
+            f"${total_delta_pnl:,.8f}",
         )
 
-        entry = safe_float(
-            position.get(
-                "entry",
-                0,
-            )
-        )
+    if has_india:
 
-        qty = safe_float(
-            position.get(
-                "qty",
-                0,
-            )
-        )
+        if c2 is not None:
 
-        if position_symbol == str(
-            active_symbol
-        ).upper():
-
-            ltp = safe_float(
-                display_price,
-                entry,
+            c2.metric(
+                "📊 India Total Open P&L",
+                f"₹{total_india_pnl:,.2f}",
             )
 
         else:
 
-            ltp = entry
-
-            try:
-
-                sig = get_signals(
-                    position_symbol
-                )
-
-                if isinstance(
-                    sig,
-                    dict,
-                ):
-
-                    latest = safe_float(
-                        sig.get(
-                            "Price",
-                            0,
-                        )
-                    )
-
-                    if latest > 0:
-                        ltp = latest
-
-            except Exception:
-                pass
-
-        if position_side == "SHORT":
-
-            total_pnl += (
-                entry - ltp
-            ) * qty
-
-        else:
-
-            total_pnl += (
-                ltp - entry
-            ) * qty
-
-    st.metric(
-        "📊 Total Open P&L",
-        format_pnl(
-            total_pnl,
-            is_delta,
-        ),
-    )
+            st.metric(
+                "📊 India Total Open P&L",
+                f"₹{total_india_pnl:,.2f}",
+            )
 
 
 # =========================================================
@@ -2270,8 +2450,8 @@ def delta_execution_status(
         )
 
     st.caption(
-        "Execution is controlled by TradeManager "
-        "and the auto-trader."
+        "Execution is controlled by "
+        "TradeManager and auto-trader."
     )
 
 
@@ -2394,7 +2574,7 @@ def risk_manager(
         suggested_qty = 0
 
     # -----------------------------------------------------
-    # Delta warning
+    # Delta
     # -----------------------------------------------------
 
     if is_delta:
@@ -2416,14 +2596,14 @@ def risk_manager(
             )
 
             st.warning(
-                "⚠️ The mathematical risk quantity is "
-                "very large because this contract has "
-                "a very small unit price."
+                "⚠️ Mathematical risk quantity is "
+                "very large because this contract "
+                "has a very small unit price."
             )
 
             st.caption(
-                "Actual execution quantity is controlled "
-                "by TradeManager."
+                "Actual execution quantity is "
+                "controlled by TradeManager."
             )
 
         else:
@@ -2482,8 +2662,10 @@ def dashboard_page(
 
     if not active_symbol:
 
-        session_futures = st.session_state.get(
-            "futures_symbol"
+        session_futures = (
+            st.session_state.get(
+                "futures_symbol"
+            )
         )
 
         if session_futures:
@@ -2494,8 +2676,10 @@ def dashboard_page(
 
     if not active_symbol:
 
-        session_trade = st.session_state.get(
-            "trade_symbol"
+        session_trade = (
+            st.session_state.get(
+                "trade_symbol"
+            )
         )
 
         if session_trade:
@@ -2511,8 +2695,10 @@ def dashboard_page(
         == "FUTURES"
     ):
 
-        futures_symbol = st.session_state.get(
-            "futures_symbol"
+        futures_symbol = (
+            st.session_state.get(
+                "futures_symbol"
+            )
         )
 
         if futures_symbol:
@@ -2582,12 +2768,14 @@ def dashboard_page(
     if is_delta:
 
         st.success(
-            "🟢 DELTA EXCHANGE • MARKET OPEN 24/7"
+            "🟢 DELTA EXCHANGE • "
+            "MARKET OPEN 24/7"
         )
 
         st.caption(
             f"Trading Symbol: {active_symbol} | "
-            "Crypto Futures • No daily market close"
+            "Crypto Futures • "
+            "No daily market close"
         )
 
     elif market_info["open"]:
@@ -2623,7 +2811,8 @@ def dashboard_page(
     )
 
     paper_mode = st.toggle(
-        "📝 Enable Paper Trading (Virtual Buy/Sell)",
+        "📝 Enable Paper Trading "
+        "(Virtual Buy/Sell)",
         value=bool(
             getattr(
                 config,

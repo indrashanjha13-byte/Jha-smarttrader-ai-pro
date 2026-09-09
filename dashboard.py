@@ -2539,14 +2539,24 @@ if page == "🏠 Dashboard":
 
                 ltp = pe_ltp
 
+            elif is_delta_symbol(pos_symbol):
+
+                try:
+                    delta_signal = get_signals(pos_symbol)
+
+                    if isinstance(delta_signal, dict):
+                        ltp = safe_float(
+                            delta_signal.get("Price", 0)
+                        )
+                    else:
+                        ltp = 0.0
+
+                except Exception:
+                    ltp = 0.0
+
             else:
 
                 ltp = current_price
-
-
-            ltp = safe_float(
-                ltp
-            )
 
 
             # ------------------------------------------------
@@ -2675,20 +2685,19 @@ if page == "🏠 Dashboard":
                         target_display,
 
                     "P&L":
-                        f"₹{pnl:,.2f}",
-
-                }
-
-            )
+                        ( 
+                            f"${pnl:,.8f}"
+                                if is_delta_symbol(pos_symbol)
+                                else f"₹{pnl:,.2f}"
+                        ),
+                    }
+                )
 
 
         if rows:
 
-            st.dataframe(
-                rows,
-                use_container_width=True,
-                hide_index=True,
-            )
+            st.table(rows)
+               
 
         else:
 
