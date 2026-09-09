@@ -664,7 +664,7 @@ def market_status(symbol):
             "🟡 PRE-MARKET",
         )
 
-    elif info["market_open"]:
+    elif info.get("market_open", info.get("open", False)):
 
         c1.metric(
             "Market",
@@ -736,7 +736,8 @@ def market_status(symbol):
     # INDIAN MARKET OPEN
     # -----------------------------------------------------
 
-    elif info["market_open"]:
+    elif info.get("market_open", info.get("open", False)):
+
 
         st.success(
             "🟢 INDIAN MARKET • OPEN"
@@ -3089,7 +3090,7 @@ def dashboard_page(
     # =====================================================
     # LAST REFRESH
     # =====================================================
-    
+
     ist = ZoneInfo("Asia/Kolkata")
 
     st.caption(
