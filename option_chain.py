@@ -550,30 +550,92 @@ def extract_option_prices(
 
 def scan_all_option_chain():
     """
-    Scan all configured indices and F&O stocks.
+    Scan configured indices and return normalized
+    CE / PE option prices for dashboard usage.
 
-    Uses delays to reduce NSE rate-limit risk.
+    Output example:
+
+    {
+        "NIFTY": {
+            "CE": 125.50,
+            "PE": 118.25,
+            "strike": 23550,
+            "expiry": "..."
+        },
+        "BANKNIFTY": {
+            "CE": ...,
+            "PE": ...,
+            "strike": ...,
+            "expiry": "..."
+        }
+    }
+
+    SENSEX is skipped because NSE does not provide
+    SENSEX option-chain data.
     """
 
     result = {}
 
-    symbols = list(
-        dict.fromkeys(
-            INDICES + FO_STOCKS
-        )
-    )
+    # Only scan NSE indices here.
+    # Do not scan every F&O stock for dashboard LTP.
+    symbols = [
+        "NIFTY",
+        "BANKNIFTY",
+        "FINNIFTY",
+        "MIDCPNIFTY",
+    ]
 
     for symbol in symbols:
 
-        logging.info(
-            f"Scanning Option Chain for: {symbol}"
-        )
+        try:
 
-        result[symbol] = get_option_chain(
-            symbol
-        )
+            logging.info(
+                f"Scanning Option Chain for: {symbol}"
+            )
 
-        # Safe delay
+            # --------------------------------------------
+            # Get raw NSE option-chain
+            # --------------------------------------------
+
+            raw_data = get_option_chain(symbol)
+
+            # --------------------------------------------
+            # Extract ATM CE / PE prices
+            # --------------------------------------------
+
+            extracted = extract_option_prices(
+                raw_data
+            )
+
+            # --------------------------------------------
+            # Store normalized result
+            # --------------------------------------------
+
+            if isinstance(extracted, dict):
+
+                result[symbol] = extracted
+
+            else:
+
+                result[symbol] = {
+                    "error": "Invalid extracted option data"
+                }
+
+        except Exception as e:
+
+            logging.warning(
+                f"Option Chain Scan Error "
+                f"{symbol}: {e}"
+            )
+
+            result[symbol] = {
+                "error": str(e)
+            }
+
+        # --------------------------------------------
+        # Small delay between NSE requests
+        # --------------------------------------------
+
         time.sleep(
             random.uniform(
                 1.5,
@@ -581,8 +643,22 @@ def scan_all_option_chain():
             )
         )
 
-    return result
+    # --------------------------------------------
+    # SENSEX
+    # --------------------------------------------
+    # SENSEX options are not available through
+    # NSE option-chain API.
+    # Keep an explicit status so dashboard knows
+    # why data is unavailable.
 
+    result["SENSEX"] = {
+        "error": (
+            "SENSEX option chain requires "
+            "BSE/Broker API"
+        )
+    }
+
+    return result
 
 # ============================================================
 # NSE CONNECTION TEST
