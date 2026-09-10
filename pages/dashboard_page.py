@@ -100,10 +100,6 @@ def normalize_signal(value):
 
 
 def get_position_side(position):
-    """
-    Normalize position direction to LONG / SHORT.
-    """
-
     if not isinstance(position, dict):
         return "LONG"
 
@@ -149,15 +145,6 @@ def format_pnl(value, delta=False):
 # =========================================================
 
 def get_active_positions(trader):
-    """
-    Return all currently active positions.
-
-    Supports:
-    - PaperTrader.get_active_positions()
-    - trader.positions
-    - legacy trader.position
-    """
-
     try:
         positions = trader.get_active_positions()
 
@@ -176,7 +163,6 @@ def get_active_positions(trader):
     if isinstance(positions, dict) and positions:
         return positions
 
-    # Legacy single-position fallback
     position = getattr(
         trader,
         "position",
@@ -220,15 +206,6 @@ def get_position_ltp(
     display_price,
     entry,
 ):
-    """
-    Get latest price for the exact position.
-
-    Priority:
-    1. Signal engine price for exact position symbol
-    2. Dashboard display price if same symbol
-    3. Entry price as final fallback
-    """
-
     position_symbol = str(
         position_symbol or ""
     ).strip().upper()
@@ -239,13 +216,11 @@ def get_position_ltp(
 
     entry = safe_float(entry)
 
-    # -----------------------------------------------------
-    # 1. Exact symbol from signal engine
-    # -----------------------------------------------------
-
+    # Exact position symbol
     if position_symbol:
 
         try:
+
             signal = get_signals(
                 position_symbol
             )
@@ -265,10 +240,7 @@ def get_position_ltp(
         except Exception:
             pass
 
-    # -----------------------------------------------------
-    # 2. Dashboard live price
-    # -----------------------------------------------------
-
+    # Dashboard live price
     if position_symbol == active_symbol:
 
         latest = safe_float(
@@ -278,10 +250,7 @@ def get_position_ltp(
         if latest > 0:
             return latest
 
-    # -----------------------------------------------------
-    # 3. Entry fallback
-    # -----------------------------------------------------
-
+    # Entry fallback
     return entry
 
 
@@ -289,10 +258,6 @@ def calculate_position_pnl(
     position,
     ltp,
 ):
-    """
-    Calculate P&L for LONG or SHORT position.
-    """
-
     if not isinstance(position, dict):
         return 0.0
 
@@ -330,11 +295,8 @@ def calculate_position_pnl(
 # =========================================================
 # MARKET STATUS
 # =========================================================
-def get_market_status(symbol):
 
-    # ========================================================
-    # DELTA EXCHANGE — OPEN 24x7
-    # ========================================================
+def get_market_status(symbol):
 
     if is_delta_symbol(symbol):
 
@@ -349,20 +311,12 @@ def get_market_status(symbol):
             ),
         }
 
-    # ========================================================
-    # INDIAN MARKET — IST
-    # ========================================================
-
     ist = ZoneInfo("Asia/Kolkata")
     now = datetime.now(ist).time()
 
     pre_market_start = time(9, 0)
     market_open = time(9, 15)
     market_close = time(15, 30)
-
-    # ========================================================
-    # PRE-MARKET
-    # ========================================================
 
     if pre_market_start <= now < market_open:
 
@@ -377,10 +331,6 @@ def get_market_status(symbol):
             ),
         }
 
-    # ========================================================
-    # MARKET OPEN
-    # ========================================================
-
     if market_open <= now <= market_close:
 
         return {
@@ -394,10 +344,6 @@ def get_market_status(symbol):
             ),
         }
 
-    # ========================================================
-    # MARKET CLOSED
-    # ========================================================
-
     return {
         "market": "INDIA",
         "status": "CLOSED",
@@ -408,6 +354,7 @@ def get_market_status(symbol):
             "CLOSED • Session 09:15–15:30 IST"
         ),
     }
+
 
 # =========================================================
 # STATUS RIBBON
@@ -506,10 +453,6 @@ def account_summary(
 
     position = None
 
-    # -----------------------------------------------------
-    # Prefer position matching current dashboard symbol
-    # -----------------------------------------------------
-
     active_symbol = str(
         symbol or ""
     ).strip().upper()
@@ -534,10 +477,6 @@ def account_summary(
             position = candidate
             break
 
-    # -----------------------------------------------------
-    # Otherwise use first active position
-    # -----------------------------------------------------
-
     if position is None:
 
         for candidate in active_positions.values():
@@ -549,10 +488,6 @@ def account_summary(
 
                 position = candidate
                 break
-
-    # -----------------------------------------------------
-    # Display position
-    # -----------------------------------------------------
 
     if position:
 
@@ -605,10 +540,6 @@ def account_summary(
         position_text = "No Position"
         pnl_text = "₹0.00"
 
-    # -----------------------------------------------------
-    # Summary cards
-    # -----------------------------------------------------
-
     c1, c2, c3, c4 = st.columns(4)
 
     c1.metric(
@@ -646,10 +577,6 @@ def market_status(symbol):
 
     c1, c2, c3 = st.columns(3)
 
-    # -----------------------------------------------------
-    # MARKET
-    # -----------------------------------------------------
-
     if info["market"] == "DELTA":
 
         c1.metric(
@@ -657,14 +584,17 @@ def market_status(symbol):
             "🟢 OPEN 24/7",
         )
 
-    elif info["status"] == "PRE_MARKET":
+    elif info["status"] == "PRE-MARKET":
 
         c1.metric(
             "Market",
             "🟡 PRE-MARKET",
         )
 
-    elif info.get("market_open", info.get("open", False)):
+    elif info.get(
+        "market_open",
+        info.get("open", False),
+    ):
 
         c1.metric(
             "Market",
@@ -677,10 +607,6 @@ def market_status(symbol):
             "Market",
             "🔴 CLOSED",
         )
-
-    # -----------------------------------------------------
-    # IST TIME / DATE
-    # -----------------------------------------------------
 
     ist = ZoneInfo("Asia/Kolkata")
     now_ist = datetime.now(ist)
@@ -699,10 +625,6 @@ def market_status(symbol):
         ),
     )
 
-    # -----------------------------------------------------
-    # DELTA
-    # -----------------------------------------------------
-
     if info["market"] == "DELTA":
 
         st.success(
@@ -716,11 +638,7 @@ def market_status(symbol):
             "No daily market close"
         )
 
-    # -----------------------------------------------------
-    # INDIAN PRE-MARKET
-    # -----------------------------------------------------
-
-    elif info["status"] == "PRE_MARKET":
+    elif info["status"] == "PRE-MARKET":
 
         st.warning(
             "🟡 INDIAN MARKET • PRE-MARKET"
@@ -732,12 +650,10 @@ def market_status(symbol):
             "Normal Market: 09:15–15:30 IST"
         )
 
-    # -----------------------------------------------------
-    # INDIAN MARKET OPEN
-    # -----------------------------------------------------
-
-    elif info.get("market_open", info.get("open", False)):
-
+    elif info.get(
+        "market_open",
+        info.get("open", False),
+    ):
 
         st.success(
             "🟢 INDIAN MARKET • OPEN"
@@ -747,10 +663,6 @@ def market_status(symbol):
             f"Trading Symbol: {symbol} | "
             "Indian session: 09:15–15:30 IST"
         )
-
-    # -----------------------------------------------------
-    # INDIAN MARKET CLOSED
-    # -----------------------------------------------------
 
     else:
 
@@ -937,10 +849,6 @@ def signal_indicators(symbol):
             f"{market_text} • {symbol}"
         )
 
-        # -------------------------------------------------
-        # Main signal cards
-        # -------------------------------------------------
-
         c1, c2, c3, c4 = st.columns(4)
 
         c1.metric(
@@ -965,10 +873,6 @@ def signal_indicators(symbol):
             "📌 Type",
             signal_type,
         )
-
-        # -------------------------------------------------
-        # Signal message
-        # -------------------------------------------------
 
         if decision == "BUY":
 
@@ -1018,10 +922,6 @@ def signal_indicators(symbol):
 
         st.divider()
 
-        # -------------------------------------------------
-        # Indicators
-        # -------------------------------------------------
-
         c1, c2, c3, c4, c5 = st.columns(5)
 
         c1.metric(
@@ -1062,10 +962,6 @@ def signal_indicators(symbol):
             ),
         )
 
-        # -------------------------------------------------
-        # Advanced indicators
-        # -------------------------------------------------
-
         with st.expander(
             "🔎 Advanced Indicator Details"
         ):
@@ -1100,9 +996,9 @@ def signal_indicators(symbol):
                 f"{avg_volume:,.2f}",
             )
 
-        # -------------------------------------------------
-        # AI Decision
-        # -------------------------------------------------
+        # =================================================
+        # AI DECISION
+        # =================================================
 
         try:
 
@@ -1180,10 +1076,6 @@ def signal_indicators(symbol):
                 "AI decision detail unavailable: "
                 f"{e}"
             )
-
-        # -------------------------------------------------
-        # Delta execution direction
-        # -------------------------------------------------
 
         if delta:
 
@@ -1382,6 +1274,171 @@ def performance_report():
 
 
 # =========================================================
+# CHART PATTERN DETECTION
+# =========================================================
+
+def detect_chart_patterns(data):
+
+    patterns = []
+
+    if data is None or data.empty:
+        return patterns
+
+    if len(data) < 3:
+        return patterns
+
+    try:
+
+        for i in range(1, len(data)):
+
+            prev_open = safe_float(
+                data["Open"].iloc[i - 1]
+            )
+
+            prev_close = safe_float(
+                data["Close"].iloc[i - 1]
+            )
+
+            prev_high = safe_float(
+                data["High"].iloc[i - 1]
+            )
+
+            prev_low = safe_float(
+                data["Low"].iloc[i - 1]
+            )
+
+            curr_open = safe_float(
+                data["Open"].iloc[i]
+            )
+
+            curr_close = safe_float(
+                data["Close"].iloc[i]
+            )
+
+            curr_high = safe_float(
+                data["High"].iloc[i]
+            )
+
+            curr_low = safe_float(
+                data["Low"].iloc[i]
+            )
+
+            prev_body = abs(
+                prev_close - prev_open
+            )
+
+            curr_body = abs(
+                curr_close - curr_open
+            )
+
+            curr_range = (
+                curr_high - curr_low
+            )
+
+            if curr_range <= 0:
+                continue
+
+            # ---------------------------------------------
+            # Bullish Engulfing
+            # ---------------------------------------------
+
+            if (
+                prev_close < prev_open
+                and curr_close > curr_open
+                and curr_open <= prev_close
+                and curr_close >= prev_open
+            ):
+
+                patterns.append(
+                    {
+                        "index": i,
+                        "name": "Bullish Engulfing",
+                        "type": "bullish",
+                    }
+                )
+
+            # ---------------------------------------------
+            # Bearish Engulfing
+            # ---------------------------------------------
+
+            elif (
+                prev_close > prev_open
+                and curr_close < curr_open
+                and curr_open >= prev_close
+                and curr_close <= prev_open
+            ):
+
+                patterns.append(
+                    {
+                        "index": i,
+                        "name": "Bearish Engulfing",
+                        "type": "bearish",
+                    }
+                )
+
+            # ---------------------------------------------
+            # Hammer
+            # ---------------------------------------------
+
+            lower_wick = (
+                min(
+                    curr_open,
+                    curr_close,
+                )
+                - curr_low
+            )
+
+            upper_wick = (
+                curr_high
+                - max(
+                    curr_open,
+                    curr_close,
+                )
+            )
+
+            if (
+                lower_wick >= curr_body * 2
+                and upper_wick <= max(
+                    curr_body,
+                    curr_range * 0.15,
+                )
+            ):
+
+                patterns.append(
+                    {
+                        "index": i,
+                        "name": "Hammer",
+                        "type": "bullish",
+                    }
+                )
+
+            # ---------------------------------------------
+            # Shooting Star
+            # ---------------------------------------------
+
+            if (
+                upper_wick >= curr_body * 2
+                and lower_wick <= max(
+                    curr_body,
+                    curr_range * 0.15,
+                )
+            ):
+
+                patterns.append(
+                    {
+                        "index": i,
+                        "name": "Shooting Star",
+                        "type": "bearish",
+                    }
+                )
+
+        return patterns
+
+    except Exception:
+        return patterns
+
+
+# =========================================================
 # DELTA MARKET CHART
 # =========================================================
 
@@ -1418,10 +1475,6 @@ def delta_chart(symbol):
 
         data = data.copy()
 
-        # -------------------------------------------------
-        # Flatten columns
-        # -------------------------------------------------
-
         if isinstance(
             data.columns,
             pd.MultiIndex,
@@ -1438,10 +1491,6 @@ def delta_chart(symbol):
                 )
                 for col in data.columns
             ]
-
-        # -------------------------------------------------
-        # Find time column
-        # -------------------------------------------------
 
         candidates = [
             "Time",
@@ -1501,10 +1550,6 @@ def delta_chart(symbol):
             data[time_col],
             errors="coerce",
         )
-
-        # -------------------------------------------------
-        # Normalize OHLC
-        # -------------------------------------------------
 
         rename_map = {}
 
@@ -1582,10 +1627,6 @@ def delta_chart(symbol):
             "Time"
         )
 
-        # -------------------------------------------------
-        # EMA
-        # -------------------------------------------------
-
         data["EMA9"] = (
             data["Close"]
             .ewm(
@@ -1604,11 +1645,15 @@ def delta_chart(symbol):
             .mean()
         )
 
-        # -------------------------------------------------
-        # Chart
-        # -------------------------------------------------
+        patterns = detect_chart_patterns(
+            data
+        )
 
         fig = go.Figure()
+
+        # =================================================
+        # CANDLESTICK — KEEP THIS
+        # =================================================
 
         fig.add_trace(
             go.Candlestick(
@@ -1638,6 +1683,84 @@ def delta_chart(symbol):
                 mode="lines",
             )
         )
+
+        # =================================================
+        # PATTERN MARKERS
+        # =================================================
+
+        bullish_x = []
+        bullish_y = []
+        bullish_text = []
+
+        bearish_x = []
+        bearish_y = []
+        bearish_text = []
+
+        for pattern in patterns:
+
+            i = pattern["index"]
+
+            if pattern["type"] == "bullish":
+
+                bullish_x.append(
+                    data["Time"].iloc[i]
+                )
+
+                bullish_y.append(
+                    data["Low"].iloc[i]
+                )
+
+                bullish_text.append(
+                    pattern["name"]
+                )
+
+            else:
+
+                bearish_x.append(
+                    data["Time"].iloc[i]
+                )
+
+                bearish_y.append(
+                    data["High"].iloc[i]
+                )
+
+                bearish_text.append(
+                    pattern["name"]
+                )
+
+        if bullish_x:
+
+            fig.add_trace(
+                go.Scatter(
+                    x=bullish_x,
+                    y=bullish_y,
+                    mode="markers+text",
+                    name="Bullish Pattern",
+                    text=bullish_text,
+                    textposition="bottom center",
+                    marker=dict(
+                        symbol="triangle-up",
+                        size=10,
+                    ),
+                )
+            )
+
+        if bearish_x:
+
+            fig.add_trace(
+                go.Scatter(
+                    x=bearish_x,
+                    y=bearish_y,
+                    mode="markers+text",
+                    name="Bearish Pattern",
+                    text=bearish_text,
+                    textposition="top center",
+                    marker=dict(
+                        symbol="triangle-down",
+                        size=10,
+                    ),
+                )
+            )
 
         fig.update_layout(
             height=550,
@@ -1748,7 +1871,15 @@ def indian_chart(symbol):
             adjust=False,
         ).mean()
 
+        patterns = detect_chart_patterns(
+            data
+        )
+
         fig = go.Figure()
+
+        # =================================================
+        # CANDLESTICK CHART
+        # =================================================
 
         fig.add_trace(
             go.Candlestick(
@@ -1761,6 +1892,10 @@ def indian_chart(symbol):
             )
         )
 
+        # =================================================
+        # EMA 9
+        # =================================================
+
         fig.add_trace(
             go.Scatter(
                 x=data.index,
@@ -1769,6 +1904,10 @@ def indian_chart(symbol):
                 mode="lines",
             )
         )
+
+        # =================================================
+        # EMA 21
+        # =================================================
 
         fig.add_trace(
             go.Scatter(
@@ -1779,16 +1918,130 @@ def indian_chart(symbol):
             )
         )
 
+        # =================================================
+        # CHART PATTERNS
+        # =================================================
+
+        bullish_x = []
+        bullish_y = []
+        bullish_text = []
+
+        bearish_x = []
+        bearish_y = []
+        bearish_text = []
+
+        for pattern in patterns:
+
+            i = pattern["index"]
+
+            if pattern["type"] == "bullish":
+
+                bullish_x.append(
+                    data.index[i]
+                )
+
+                bullish_y.append(
+                    safe_float(
+                        data["Low"].iloc[i]
+                    )
+                )
+
+                bullish_text.append(
+                    pattern["name"]
+                )
+
+            else:
+
+                bearish_x.append(
+                    data.index[i]
+                )
+
+                bearish_y.append(
+                    safe_float(
+                        data["High"].iloc[i]
+                    )
+                )
+
+                bearish_text.append(
+                    pattern["name"]
+                )
+
+        if bullish_x:
+
+            fig.add_trace(
+                go.Scatter(
+                    x=bullish_x,
+                    y=bullish_y,
+                    mode="markers+text",
+                    name="Bullish Pattern",
+                    text=bullish_text,
+                    textposition="bottom center",
+                    marker=dict(
+                        symbol="triangle-up",
+                        size=10,
+                    ),
+                )
+            )
+
+        if bearish_x:
+
+            fig.add_trace(
+                go.Scatter(
+                    x=bearish_x,
+                    y=bearish_y,
+                    mode="markers+text",
+                    name="Bearish Pattern",
+                    text=bearish_text,
+                    textposition="top center",
+                    marker=dict(
+                        symbol="triangle-down",
+                        size=10,
+                    ),
+                )
+            )
+
         fig.update_layout(
-            height=500,
+            title=f"{symbol} • Candlestick Chart",
+            height=550,
             xaxis_rangeslider_visible=False,
             hovermode="x unified",
+            margin=dict(
+                l=10,
+                r=10,
+                t=45,
+                b=10,
+            ),
         )
 
         st.plotly_chart(
             fig,
             use_container_width=True,
         )
+
+        # =================================================
+        # PATTERN SUMMARY
+        # =================================================
+
+        if patterns:
+
+            latest_patterns = patterns[-5:]
+
+            pattern_text = " • ".join(
+                p["name"]
+                for p in latest_patterns
+            )
+
+            st.info(
+                f"🔎 Chart Patterns: "
+                f"{pattern_text}"
+            )
+
+        else:
+
+            st.caption(
+                "🔎 Chart Patterns: "
+                "No confirmed candle pattern detected."
+            )
 
     except Exception as e:
 
@@ -2101,7 +2354,6 @@ def multi_index_scanner():
         scanner_rows
     )
 
-    # FIX: avoid Streamlit dataframe/canvas artifact
     st.table(df)
 
     best = max(
@@ -2257,10 +2509,6 @@ def portfolio_section(
         active_symbol or ""
     ).strip().upper()
 
-    # -----------------------------------------------------
-    # Process every position exactly once
-    # -----------------------------------------------------
-
     for _, position in active_positions.items():
 
         if not isinstance(
@@ -2331,10 +2579,6 @@ def portfolio_section(
             position_symbol
         )
 
-        # -------------------------------------------------
-        # Exact LTP
-        # -------------------------------------------------
-
         ltp = get_position_ltp(
             position_symbol=position_symbol,
             active_symbol=active_symbol_upper,
@@ -2342,18 +2586,10 @@ def portfolio_section(
             entry=entry,
         )
 
-        # -------------------------------------------------
-        # Exact P&L
-        # -------------------------------------------------
-
         pnl = calculate_position_pnl(
             position,
             ltp,
         )
-
-        # -------------------------------------------------
-        # Market-wise totals
-        # -------------------------------------------------
 
         if position_delta:
 
@@ -2362,10 +2598,6 @@ def portfolio_section(
         else:
 
             total_india_pnl += pnl
-
-        # -------------------------------------------------
-        # Row
-        # -------------------------------------------------
 
         rows.append(
             {
@@ -2396,10 +2628,6 @@ def portfolio_section(
             }
         )
 
-    # -----------------------------------------------------
-    # No valid positions
-    # -----------------------------------------------------
-
     if not rows:
 
         st.info(
@@ -2408,20 +2636,11 @@ def portfolio_section(
 
         return
 
-    # -----------------------------------------------------
-    # Portfolio table
-    # -----------------------------------------------------
-
     portfolio_df = pd.DataFrame(
         rows
     )
 
-    # FIX: replace dataframe to remove canvas artifact
     st.table(portfolio_df)
-
-    # -----------------------------------------------------
-    # Detect available markets
-    # -----------------------------------------------------
 
     has_delta = False
     has_india = False
@@ -2437,10 +2656,6 @@ def portfolio_section(
         else:
 
             has_india = True
-
-    # -----------------------------------------------------
-    # Market-wise P&L
-    # -----------------------------------------------------
 
     if has_delta and has_india:
 
@@ -2547,6 +2762,7 @@ def risk_manager(
     trader,
     display_price,
     is_delta,
+    active_symbol=None,
 ):
 
     st.subheader(
@@ -2561,18 +2777,56 @@ def risk_manager(
         )
     )
 
+    symbol_key = str(
+        active_symbol or "UNKNOWN"
+    ).strip().upper()
+
+    safe_symbol_key = (
+        symbol_key
+        .replace("^", "")
+        .replace("-", "_")
+        .replace("/", "_")
+        .replace(" ", "_")
+        .replace(".", "_")
+    )
+
+    risk_key = (
+        f"dashboard_risk_percent_"
+        f"{safe_symbol_key}"
+    )
+
+    entry_key = (
+        f"dashboard_entry_price_"
+        f"{safe_symbol_key}"
+    )
+
+    stop_key = (
+        f"dashboard_stop_price_"
+        f"{safe_symbol_key}"
+    )
+
+    target_key = (
+        f"dashboard_target_price_"
+        f"{safe_symbol_key}"
+    )
+
+    quantity_key = (
+        f"dashboard_order_quantity_"
+        f"{safe_symbol_key}"
+    )
+
     risk_percent = st.slider(
         "Risk %",
         min_value=1,
         max_value=5,
         value=2,
         step=1,
-        key="dashboard_risk_percent",
+        key=risk_key,
     )
 
-    # -----------------------------------------------------
-    # Defaults
-    # -----------------------------------------------------
+    # =====================================================
+    # DEFAULT ENTRY
+    # =====================================================
 
     if is_delta:
 
@@ -2588,7 +2842,16 @@ def risk_manager(
             default_entry * 0.99
         )
 
+        default_target = (
+            default_entry
+            + (
+                default_entry
+                - default_stop
+            ) * 2
+        )
+
         price_format = "%.8f"
+        price_step = 0.00000001
 
     else:
 
@@ -2604,37 +2867,73 @@ def risk_manager(
             default_entry * 0.98
         )
 
-        price_format = "%.2f"
+        default_target = (
+            default_entry
+            + (
+                default_entry
+                - default_stop
+            ) * 2
+        )
 
-    # -----------------------------------------------------
-    # Entry / SL
-    # -----------------------------------------------------
+        price_format = "%.2f"
+        price_step = 0.05
+
+    # =====================================================
+    # ENTRY
+    # =====================================================
 
     entry = st.number_input(
         "Entry Price",
         min_value=0.0,
         value=float(default_entry),
-        step=(
-            0.00000001
-            if is_delta
-            else 0.05
-        ),
+        step=price_step,
         format=price_format,
-        key="dashboard_entry_price",
+        key=entry_key,
     )
+
+    # =====================================================
+    # STOP LOSS
+    # =====================================================
 
     stop = st.number_input(
         "Stop Loss",
         min_value=0.0,
         value=float(default_stop),
-        step=(
-            0.00000001
-            if is_delta
-            else 0.05
-        ),
+        step=price_step,
         format=price_format,
-        key="dashboard_stop_price",
+        key=stop_key,
     )
+
+    # =====================================================
+    # TARGET
+    # =====================================================
+
+    target = st.number_input(
+        "Target Price",
+        min_value=0.0,
+        value=float(default_target),
+        step=price_step,
+        format=price_format,
+        key=target_key,
+    )
+
+    # =====================================================
+    # OLD WORKING ORDER QUANTITY
+    # DEFAULT = 400
+    # =====================================================
+
+    order_quantity = st.number_input(
+        "Order Quantity",
+        min_value=1,
+        max_value=1000000,
+        value=400,
+        step=1,
+        key=quantity_key,
+    )
+
+    # =====================================================
+    # RISK CALCULATION
+    # =====================================================
 
     risk_amount = (
         capital
@@ -2648,73 +2947,203 @@ def risk_manager(
 
     if risk_per_unit > 0:
 
-        suggested_qty = int(
+        mathematical_qty = int(
             risk_amount
             / risk_per_unit
         )
 
     else:
 
-        suggested_qty = 0
+        mathematical_qty = 0
 
-    # -----------------------------------------------------
-    # Delta
-    # -----------------------------------------------------
+    # =====================================================
+    # REWARD
+    # =====================================================
+
+    if entry > 0 and target > 0:
+
+        reward_per_unit = abs(
+            target - entry
+        )
+
+    else:
+
+        reward_per_unit = 0.0
+
+    # =====================================================
+    # RISK / REWARD RATIO
+    # =====================================================
+
+    if risk_per_unit > 0:
+
+        reward_risk_ratio = (
+            reward_per_unit
+            / risk_per_unit
+        )
+
+    else:
+
+        reward_risk_ratio = 0.0
+
+    # =====================================================
+    # TOTAL RISK / TOTAL REWARD
+    # USING ORDER QUANTITY = 400 BY DEFAULT
+    # =====================================================
+
+    total_risk = (
+        risk_per_unit
+        * order_quantity
+    )
+
+    total_reward = (
+        reward_per_unit
+        * order_quantity
+    )
+
+    # =====================================================
+    # DISPLAY
+    # =====================================================
+
+    st.divider()
+
+    c1, c2, c3 = st.columns(3)
 
     if is_delta:
 
-        st.caption(
-            "Delta Futures quantity is contract-based."
-        )
-
-        st.metric(
+        c1.metric(
             "Risk Amount",
             f"${risk_amount:,.2f}",
         )
 
-        if suggested_qty > 1_000_000:
+        c2.metric(
+            "Reward",
+            f"${total_reward:,.8f}",
+        )
 
-            st.metric(
-                "Suggested Quantity",
-                "Contract-based",
-            )
-
-            st.warning(
-                "⚠️ Mathematical risk quantity is "
-                "very large because this contract "
-                "has a very small unit price."
-            )
-
-            st.caption(
-                "Actual execution quantity is "
-                "controlled by TradeManager."
-            )
-
-        else:
-
-            st.metric(
-                "Suggested Quantity",
-                suggested_qty,
-            )
+        c3.metric(
+            "Risk / Reward",
+            (
+                f"1 : "
+                f"{reward_risk_ratio:.2f}"
+            ),
+        )
 
     else:
 
-        st.metric(
+        c1.metric(
             "Risk Amount",
             f"₹{risk_amount:,.2f}",
         )
 
-        st.metric(
-            "Suggested Quantity",
-            suggested_qty,
+        c2.metric(
+            "Reward",
+            f"₹{total_reward:,.2f}",
+        )
+
+        c3.metric(
+            "Risk / Reward",
+            (
+                f"1 : "
+                f"{reward_risk_ratio:.2f}"
+            ),
+        )
+
+    c4, c5, c6 = st.columns(3)
+
+    if is_delta:
+
+        c4.metric(
+            "Risk / Unit",
+            f"${risk_per_unit:,.8f}",
+        )
+
+        c5.metric(
+            "Reward / Unit",
+            f"${reward_per_unit:,.8f}",
+        )
+
+        c6.metric(
+            "Total Risk",
+            f"${total_risk:,.8f}",
+        )
+
+    else:
+
+        c4.metric(
+            "Risk / Unit",
+            f"₹{risk_per_unit:,.2f}",
+        )
+
+        c5.metric(
+            "Reward / Unit",
+            f"₹{reward_per_unit:,.2f}",
+        )
+
+        c6.metric(
+            "Total Risk",
+            f"₹{total_risk:,.2f}",
+        )
+
+    # =====================================================
+    # QUANTITY DISPLAY
+    # =====================================================
+
+    st.metric(
+        "📦 Order Quantity",
+        int(order_quantity),
+    )
+
+    st.caption(
+        f"Selected Symbol: {symbol_key}"
+    )
+
+    st.caption(
+        f"Mathematical Risk Quantity: "
+        f"{mathematical_qty:,}"
+    )
+
+    if reward_risk_ratio >= 2:
+
+        st.success(
+            f"✅ Good Risk/Reward: "
+            f"1 : {reward_risk_ratio:.2f}"
+        )
+
+    elif reward_risk_ratio >= 1:
+
+        st.warning(
+            f"⚠️ Moderate Risk/Reward: "
+            f"1 : {reward_risk_ratio:.2f}"
+        )
+
+    else:
+
+        st.error(
+            f"🔴 Poor Risk/Reward: "
+            f"1 : {reward_risk_ratio:.2f}"
+        )
+
+    if is_delta:
+
+        st.caption(
+            "Delta Futures quantity is "
+            "contract-based. Actual execution "
+            "quantity remains controlled by TradeManager."
         )
 
     return {
         "entry": entry,
         "stop": stop,
+        "target": target,
         "risk_percent": risk_percent,
         "risk_amount": risk_amount,
-        "suggested_quantity": suggested_qty,
+        "risk_per_unit": risk_per_unit,
+        "reward_per_unit": reward_per_unit,
+        "reward": total_reward,
+        "total_risk": total_risk,
+        "risk_reward_ratio": reward_risk_ratio,
+        "order_quantity": int(order_quantity),
+        "suggested_quantity": mathematical_qty,
     }
 
 
@@ -2736,66 +3165,61 @@ def dashboard_page(
     # RESOLVE ACTIVE SYMBOL
     # =====================================================
 
-    active_symbol = None
+    requested_symbol = str(
+        trade_symbol or ""
+    ).strip().upper()
 
-    if trade_symbol:
+    incoming_symbol = str(
+        symbol or ""
+    ).strip().upper()
 
-        active_symbol = str(
-            trade_symbol
-        ).strip().upper()
-
-    if not active_symbol:
-
-        session_futures = (
-            st.session_state.get(
-                "futures_symbol"
-            )
+    session_trade = str(
+        st.session_state.get(
+            "trade_symbol",
+            "",
         )
+        or ""
+    ).strip().upper()
 
-        if session_futures:
-
-            active_symbol = str(
-                session_futures
-            ).strip().upper()
-
-    if not active_symbol:
-
-        session_trade = (
-            st.session_state.get(
-                "trade_symbol"
-            )
+    session_futures = str(
+        st.session_state.get(
+            "futures_symbol",
+            "",
         )
+        or ""
+    ).strip().upper()
 
-        if session_trade:
+    market_type_upper = str(
+        market_type or ""
+    ).strip().upper()
 
-            active_symbol = str(
-                session_trade
-            ).strip().upper()
+    # Explicit trade_symbol has highest priority.
+    # This prevents old NIFTY session data from
+    # overriding the newly selected BANKNIFTY.
 
-    if (
-        str(
-            market_type or ""
-        ).strip().upper()
-        == "FUTURES"
-    ):
+    if requested_symbol:
 
-        futures_symbol = (
-            st.session_state.get(
-                "futures_symbol"
-            )
-        )
+        active_symbol = requested_symbol
 
-        if futures_symbol:
+    elif market_type_upper == "FUTURES" and incoming_symbol:
 
-            active_symbol = str(
-                futures_symbol
-            ).strip().upper()
+        active_symbol = incoming_symbol
 
-    if not active_symbol:
+    elif incoming_symbol:
 
-        active_symbol = str(
-            symbol or "^NSEI"
-        ).strip().upper()
+        active_symbol = incoming_symbol
+
+    elif market_type_upper == "FUTURES" and session_futures:
+
+        active_symbol = session_futures
+
+    elif session_trade:
+
+        active_symbol = session_trade
+
+    else:
+
+        active_symbol = "^NSEI"
 
     # =====================================================
     # SESSION SYNC
@@ -2805,12 +3229,7 @@ def dashboard_page(
         "trade_symbol"
     ] = active_symbol
 
-    if (
-        str(
-            market_type or ""
-        ).strip().upper()
-        == "FUTURES"
-    ):
+    if market_type_upper == "FUTURES":
 
         st.session_state[
             "futures_symbol"
@@ -2979,6 +3398,12 @@ def dashboard_page(
 
             display_price = signal_price
 
+    if display_price <= 0:
+
+        display_price = safe_float(
+            current_price
+        )
+
     if is_delta:
 
         st.metric(
@@ -3042,6 +3467,7 @@ def dashboard_page(
         trader=trader,
         display_price=display_price,
         is_delta=is_delta,
+        active_symbol=active_symbol,
     )
 
     st.divider()
@@ -3094,12 +3520,9 @@ def dashboard_page(
     ist = ZoneInfo("Asia/Kolkata")
 
     st.caption(
-    "Last Refresh: "
-    + datetime.now(ist).strftime(
-        "%Y-%m-%d %H:%M:%S"
+        "Last Refresh: "
+        + datetime.now(ist).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        + " IST"
     )
-    + " IST"
-)
-
-   
-    

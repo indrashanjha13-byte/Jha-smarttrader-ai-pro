@@ -52,30 +52,105 @@ session.headers.update(HEADERS)
 
 def refresh_cookie():
     """
-    Initialize NSE session cookies before requesting option chain.
+    Initialize NSE session using browser-like navigation
+    before requesting option-chain API.
     """
 
     try:
-        # Open NSE homepage first
-        session.get(
+        # ----------------------------------------------------
+        # 1. NSE homepage
+        # ----------------------------------------------------
+        r1 = session.get(
             "https://www.nseindia.com/",
-            timeout=10
+            headers={
+                **HEADERS,
+                "Accept": (
+                    "text/html,application/xhtml+xml,"
+                    "application/xml;q=0.9,image/avif,"
+                    "image/webp,*/*;q=0.8"
+                ),
+                "Sec-Fetch-Site": "none",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Dest": "document",
+            },
+            timeout=15,
         )
 
-        time.sleep(1)
+        logging.info(
+            f"NSE Home Status: {r1.status_code}"
+        )
 
-        # Then open Option Chain page
-        session.get(
+        time.sleep(random.uniform(1.0, 2.0))
+
+        # ----------------------------------------------------
+        # 2. Option Chain page
+        # ----------------------------------------------------
+        r2 = session.get(
             "https://www.nseindia.com/option-chain",
-            timeout=10
+            headers={
+                **HEADERS,
+                "Accept": (
+                    "text/html,application/xhtml+xml,"
+                    "application/xml;q=0.9,image/avif,"
+                    "image/webp,*/*;q=0.8"
+                ),
+                "Sec-Fetch-Site": "same-origin",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Dest": "document",
+            },
+            timeout=15,
         )
 
-        time.sleep(1)
+        logging.info(
+            f"NSE Option Chain Page Status: {r2.status_code}"
+        )
+
+        time.sleep(random.uniform(1.0, 2.0))
+
+        # ----------------------------------------------------
+        # 3. Derivatives quote page
+        # ----------------------------------------------------
+        try:
+            r3 = session.get(
+                "https://www.nseindia.com/get-quotes/derivatives",
+                params={"symbol": "NIFTY"},
+                headers={
+                    **HEADERS,
+                    "Referer": (
+                        "https://www.nseindia.com/option-chain"
+                    ),
+                },
+                timeout=15,
+            )
+
+            logging.info(
+                f"NSE Derivatives Status: {r3.status_code}"
+            )
+
+        except Exception as e:
+            logging.warning(
+                f"NSE Derivatives Page Warning: {e}"
+            )
+
+        time.sleep(random.uniform(0.5, 1.5))
+
+        # ----------------------------------------------------
+        # 4. Show cookie information
+        # ----------------------------------------------------
+        logging.info(
+            f"NSE Cookies Loaded: "
+            f"{list(session.cookies.keys())}"
+        )
+
+        return True
 
     except Exception as e:
+
         logging.warning(
             f"NSE Cookie Refresh Warning: {e}"
         )
+
+        return False
 # ============================================================
 # SYMBOL NORMALIZATION
 # ============================================================
@@ -176,6 +251,15 @@ def get_option_chain(symbol):
 
         response = session.get(
             url,
+            headers={
+                **HEADERS,
+                "Referer": "https://www.nseindia.com/option-chain",
+                "Accept": "application/json, text/plain, */*",
+                "Sec-Fetch-Site": "same-origin",
+                "Sec-Fetch-Mode": "cors",
+                "Sec-Fetch-Dest": "empty",
+            },
+            cookies=session.cookies,
             timeout=15
         )
 
@@ -184,7 +268,7 @@ def get_option_chain(symbol):
             f"URL: {url} | "
             f"Status: {response.status_code}"
         )
-
+           
         # ----------------------------------------------------
         # HTTP error
         # ----------------------------------------------------
