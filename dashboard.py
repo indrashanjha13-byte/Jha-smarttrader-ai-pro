@@ -132,7 +132,6 @@ st.markdown(
 def get_cached_option_chain():
 
     try:
-
         return scan_all_option_chain()
 
     except Exception as e:
@@ -156,7 +155,6 @@ def safe_float(
     try:
 
         if value is None:
-
             return default
 
         if isinstance(
@@ -167,7 +165,6 @@ def safe_float(
             value = value.strip()
 
             if not value:
-
                 return default
 
             value = value.replace(
@@ -178,20 +175,17 @@ def safe_float(
         result = float(value)
 
         if result != result:
-
             return default
 
         if result in (
             float("inf"),
             float("-inf"),
         ):
-
             return default
 
         return result
 
     except Exception:
-
         return default
 
 
@@ -209,14 +203,12 @@ def normalize_signal(value):
         "BUY" in value
         and "SELL" not in value
     ):
-
         return "BUY"
 
     if (
         "SELL" in value
         and "BUY" not in value
     ):
-
         return "SELL"
 
     return "HOLD"
@@ -243,7 +235,6 @@ def normalize_position_side(position):
         position,
         dict,
     ):
-
         return "LONG"
 
     raw_position_side = str(
@@ -257,7 +248,6 @@ def normalize_position_side(position):
         "LONG",
         "SHORT",
     }:
-
         return raw_position_side
 
     raw_side = str(
@@ -274,7 +264,6 @@ def normalize_position_side(position):
         "SELL",
         "SHORT",
     }:
-
         return "SHORT"
 
     return "LONG"
@@ -293,7 +282,6 @@ def is_delta_symbol(symbol):
         ).strip().upper()
 
         if not s:
-
             return False
 
         delta_symbols = {
@@ -315,21 +303,17 @@ def is_delta_symbol(symbol):
         }
 
         if s in delta_symbols:
-
             return True
 
         if s.endswith("USD"):
-
             return True
 
         if s.endswith("USDT"):
-
             return True
 
         return False
 
     except Exception:
-
         return False
 
 
@@ -590,7 +574,6 @@ try:
         settings,
         dict,
     ):
-
         settings = {}
 
 except Exception:
@@ -679,7 +662,6 @@ symbol = st.sidebar.selectbox(
 
 # ============================================================
 # IMPORTANT SESSION STATE
-# Selected underlying symbol is always stored separately.
 # ============================================================
 
 st.session_state[
@@ -836,11 +818,9 @@ if (
     and is_option_index
 ):
 
-    index_name = (
-        OPTION_SYMBOL_MAP[
-            symbol
-        ]
-    )
+    index_name = OPTION_SYMBOL_MAP[
+        symbol
+    ]
 
     try:
 
@@ -947,6 +927,10 @@ if (
     )
 
 
+    # ========================================================
+    # DYNAMIC ORDER QUANTITY
+    # ========================================================
+
     quantity = (
         int(selected_lots)
         * int(LOT_SIZE)
@@ -957,7 +941,7 @@ if (
         f"📦 Lot Size : {LOT_SIZE}"
     )
 
-    st.sidebar.info(
+    st.sidebar.success(
         f"🔢 Order Quantity : {quantity}"
     )
 
@@ -984,7 +968,6 @@ if market_type == "FUTURES":
                     product,
                     dict,
                 ):
-
                     continue
 
                 product_symbol = product.get(
@@ -1051,10 +1034,6 @@ if market_type == "FUTURES":
         key="dashboard_futures_symbol",
     )
 
-
-    # --------------------------------------------------------
-    # Store actual futures symbol separately.
-    # --------------------------------------------------------
 
     st.session_state[
         "futures_symbol"
@@ -1209,11 +1188,8 @@ live_auto_trading = st.sidebar.toggle(
 if live_auto_trading:
 
     try:
-
         enable_auto()
-
     except Exception:
-
         pass
 
     st.sidebar.warning(
@@ -1228,11 +1204,8 @@ if live_auto_trading:
     if not live_confirm:
 
         try:
-
             disable_auto()
-
         except Exception:
-
             pass
 
         st.sidebar.error(
@@ -1243,11 +1216,8 @@ if live_auto_trading:
 elif paper_trading:
 
     try:
-
         disable_auto()
-
     except Exception:
-
         pass
 
     st.sidebar.success(
@@ -1276,27 +1246,11 @@ if page == "🏠 Dashboard":
     # ========================================================
     # DASHBOARD SYMBOL
     # ========================================================
-    #
-    # IMPORTANT:
-    #
-    # Indian OPTIONS:
-    #     dashboard_symbol = underlying index
-    #
-    # Example:
-    #     ^NSEBANK
-    #
-    # Actual option contract:
-    #     BANKNIFTYEXPIRY56500PE
-    #
-    # The option contract is ONLY used for trading.
-    # It must NOT replace the dashboard underlying symbol.
-    #
-    # Delta FUTURES:
-    #     dashboard_symbol = selected futures symbol
-    #
-    # ========================================================
 
-    if market_type == "FUTURES" and futures_symbol:
+    if (
+        market_type == "FUTURES"
+        and futures_symbol
+    ):
 
         dashboard_symbol = futures_symbol
 
@@ -1304,10 +1258,6 @@ if page == "🏠 Dashboard":
 
         dashboard_symbol = symbol
 
-
-    # --------------------------------------------------------
-    # Store selected dashboard symbol.
-    # --------------------------------------------------------
 
     st.session_state[
         "dashboard_symbol"
@@ -1424,9 +1374,7 @@ if page == "🏠 Dashboard":
 
                     index_name=index_name,
 
-                    underlying_price=(
-                        underlying_price
-                    ),
+                    underlying_price=underlying_price,
 
                     option_type="CE",
 
@@ -1465,9 +1413,7 @@ if page == "🏠 Dashboard":
 
                     index_name=index_name,
 
-                    underlying_price=(
-                        underlying_price
-                    ),
+                    underlying_price=underlying_price,
 
                     option_type="PE",
 
@@ -1798,23 +1744,6 @@ if page == "🏠 Dashboard":
     # ========================================================
     # TRADE SYMBOL
     # ========================================================
-    #
-    # IMPORTANT:
-    #
-    # This is the execution symbol.
-    #
-    # FUTURES:
-    #     BTCUSD / ETHUSD / etc.
-    #
-    # OPTIONS:
-    #     underlying symbol is retained here for compatibility
-    #     with the existing TradeManager logic.
-    #
-    # The actual CE/PE contract is kept separately inside:
-    #
-    #     option_contract_by_option
-    #
-    # ========================================================
 
     if (
         market_type == "FUTURES"
@@ -1827,8 +1756,6 @@ if page == "🏠 Dashboard":
 
         trade_symbol = symbol
 
-
-    # Store execution symbol separately.
 
     st.session_state[
         "trade_symbol"
@@ -1969,7 +1896,6 @@ if page == "🏠 Dashboard":
                         position,
                         dict,
                     ):
-
                         continue
 
 
@@ -2052,8 +1978,7 @@ if page == "🏠 Dashboard":
         try:
 
             # =================================================
-            # IMPORTANT:
-            # No new Indian-market entry when market is closed
+            # INDIAN MARKET ENTRY BLOCK
             # =================================================
 
             if (
@@ -2092,7 +2017,7 @@ if page == "🏠 Dashboard":
 
 
                 # ------------------------------------------------
-                # ALL → BUY CE + BUY PE SEPARATELY
+                # BUY CE + PE
                 # ------------------------------------------------
 
                 if signal == "BUY":
@@ -2264,7 +2189,7 @@ if page == "🏠 Dashboard":
 
 
                 # ------------------------------------------------
-                # ALL → EXIT EXISTING BUY POSITIONS
+                # SELL = EXIT ONLY
                 # ------------------------------------------------
 
                 elif signal == "SELL":
@@ -2458,6 +2383,7 @@ if page == "🏠 Dashboard":
                         f"⛔ AUTO PAPER {option_mode} blocked: "
                         "actual option LTP unavailable."
                     )
+
 
                 # ------------------------------------------------
                 # BUY
@@ -2808,10 +2734,6 @@ if page == "🏠 Dashboard":
                 f"PAPERTEST_{test_index}"
             )
 
-            test_key = (
-                f"{test_symbol}_{test_option}"
-            )
-
 
             st.info(
                 f"Test Contract: {test_index} "
@@ -3071,673 +2993,15 @@ if page == "🏠 Dashboard":
 
 
     # ========================================================
-    # MAIN DASHBOARD
-    # ========================================================
-
-    st.title(
-        "📊 SmartTrader Dashboard"
-    )
-
-
-    # ========================================================
-    # SELECTED MARKET DISPLAY
-    # ========================================================
-
-    if market_type == "FUTURES":
-
-        st.caption(
-            f"📌 Selected Futures: {dashboard_symbol}"
-        )
-
-    elif market_type == "OPTIONS":
-
-        st.caption(
-            f"📌 Selected Index: {dashboard_symbol} "
-            f"• Option Mode: {option_mode}"
-        )
-
-    else:
-
-        st.caption(
-            f"📌 Selected Symbol: {dashboard_symbol}"
-        )
-
-
-    # ========================================================
-    # MARKET BANNER
-    # ========================================================
-
-    if trade_market_status["market"] == "DELTA":
-
-        st.success(
-            "🟢 DELTA EXCHANGE • MARKET OPEN 24/7"
-        )
-
-    elif trade_market_status["status"] == "ENTRY_OPEN":
-
-        st.success(
-            "🟢 INDIAN MARKET • ENTRY OPEN • 09:15–15:30"
-        )
-
-    elif trade_market_status["status"] == "PRE_MARKET":
-
-        st.warning(
-            "🟡 INDIAN MARKET • PRE-MARKET • Opens 09:15"
-        )
-
-    else:
-
-        st.error(
-            "🔴 INDIAN MARKET • CLOSED • New entries blocked"
-        )
-
-
-    # ========================================================
-    # TOP METRICS
-    # ========================================================
-
-    c1, c2, c3, c4 = st.columns(4)
-
-
-    with c1:
-
-        st.metric(
-            "Symbol",
-            dashboard_symbol,
-        )
-
-
-    with c2:
-
-        if is_delta_symbol(
-            dashboard_symbol
-        ):
-
-            st.metric(
-                "Price",
-                f"${underlying_price:,.8f}",
-            )
-
-        else:
-
-            st.metric(
-                "Price",
-                f"₹{underlying_price:,.2f}",
-            )
-
-
-    with c3:
-
-        st.metric(
-            "Signal",
-            signal,
-        )
-
-
-    with c4:
-
-        st.metric(
-            "Strength",
-            f"{signal_strength:.0f}%",
-        )
-
-
-    # ========================================================
-    # OPTION MARKET
-    # ========================================================
-
-    if market_type == "OPTIONS":
-
-        st.markdown(
-            "### 📦 Option Market"
-        )
-
-
-        o1, o2, o3, o4 = st.columns(4)
-
-
-        with o1:
-
-            st.metric(
-                "Underlying",
-                f"₹{underlying_price:,.2f}",
-            )
-
-
-        with o2:
-
-            ce_contract = (
-                option_contract_by_option.get(
-                    "CE"
-                )
-            )
-
-            st.metric(
-                "CE Strike",
-                (
-                    str(
-                        ce_contract.get(
-                            "strike"
-                        )
-                    )
-                    if ce_contract
-                    else "N/A"
-                ),
-            )
-
-
-        with o3:
-
-            st.metric(
-                "CE LTP",
-                (
-                    f"₹{ce_ltp:,.2f}"
-                    if ce_ltp > 0
-                    else "N/A"
-                ),
-            )
-
-
-        with o4:
-
-            st.metric(
-                "PE LTP",
-                (
-                    f"₹{pe_ltp:,.2f}"
-                    if pe_ltp > 0
-                    else "N/A"
-                ),
-            )
-
-
-        if (
-            ce_ltp <= 0
-            or pe_ltp <= 0
-        ):
-
-            st.warning(
-                "⚠️ Actual CE/PE option LTP "
-                "available नहीं है। Auto Paper "
-                "Option Entry blocked है."
-            )
-
-
-    # ========================================================
-    # INDICATORS
-    # ========================================================
-
-    st.markdown(
-        "### 📈 Indicators"
-    )
-
-
-    i1, i2, i3, i4, i5 = st.columns(5)
-
-
-    ema9 = safe_float(
-        signal_data.get(
-            "EMA9",
-            signal_data.get(
-                "EMA_9",
-                0,
-            ),
-        )
-    )
-
-
-    ema21 = safe_float(
-        signal_data.get(
-            "EMA21",
-            signal_data.get(
-                "EMA_21",
-                0,
-            ),
-        )
-    )
-
-
-    rsi = safe_float(
-        signal_data.get(
-            "RSI",
-            0,
-        )
-    )
-
-
-    macd = safe_float(
-        signal_data.get(
-            "MACD",
-            0,
-        )
-    )
-
-
-    supertrend = safe_float(
-        signal_data.get(
-            "SUPERTREND",
-            signal_data.get(
-                "SUPERTREND_VALUE",
-                signal_data.get(
-                    "SuperTrend",
-                    0,
-                ),
-            ),
-        )
-    )
-
-
-    delta_display = is_delta_symbol(
-        dashboard_symbol
-    )
-
-
-    with i1:
-
-        if delta_display:
-
-            st.metric(
-                "EMA 9",
-                f"${ema9:,.8f}",
-            )
-
-        else:
-
-            st.metric(
-                "EMA 9",
-                f"₹{ema9:,.2f}",
-            )
-
-
-    with i2:
-
-        if delta_display:
-
-            st.metric(
-                "EMA 21",
-                f"${ema21:,.8f}",
-            )
-
-        else:
-
-            st.metric(
-                "EMA 21",
-                f"₹{ema21:,.2f}",
-            )
-
-
-    with i3:
-
-        st.metric(
-            "RSI",
-            f"{rsi:.2f}",
-        )
-
-
-    with i4:
-
-        if delta_display:
-
-            st.metric(
-                "MACD",
-                f"${macd:,.8f}",
-            )
-
-        else:
-
-            st.metric(
-                "MACD",
-                f"{macd:.4f}",
-            )
-
-
-    with i5:
-
-        if delta_display:
-
-            st.metric(
-                "SuperTrend",
-                f"${supertrend:,.8f}",
-            )
-
-        else:
-
-            st.metric(
-                "SuperTrend",
-                f"₹{supertrend:,.2f}",
-            )
-
-
-    # ========================================================
-    # ACTIVE POSITIONS
-    # ========================================================
-
-    st.markdown(
-        "### 📦 Active Positions"
-    )
-
-
-    try:
-
-        active_positions = (
-            trader.get_active_positions()
-        )
-
-    except Exception as e:
-
-        logging.warning(
-            f"Active positions error: {e}"
-        )
-
-        active_positions = {}
-
-
-    if not isinstance(
-        active_positions,
-        dict,
-    ):
-
-        active_positions = {}
-
-
-    if active_positions:
-
-        rows = []
-
-
-        for (
-            position_key,
-            position,
-        ) in active_positions.items():
-
-            if not isinstance(
-                position,
-                dict,
-            ):
-
-                continue
-
-
-            pos_symbol = str(
-                position.get(
-                    "symbol",
-                    "",
-                )
-            )
-
-
-            pos_option = str(
-                position.get(
-                    "option_mode",
-                    "N/A",
-                )
-            ).upper()
-
-
-            pos_side = normalize_position_side(
-                position
-            )
-
-
-            entry = safe_float(
-                position.get(
-                    "entry",
-                    0,
-                )
-            )
-
-
-            qty = int(
-                safe_float(
-                    position.get(
-                        "qty",
-                        0,
-                    )
-                )
-            )
-
-
-            # ------------------------------------------------
-            # CURRENT LTP
-            # ------------------------------------------------
-
-            if (
-                market_type == "OPTIONS"
-                and pos_option == "CE"
-            ):
-
-                ltp = ce_ltp
-
-            elif (
-                market_type == "OPTIONS"
-                and pos_option == "PE"
-            ):
-
-                ltp = pe_ltp
-
-            elif is_delta_symbol(
-                pos_symbol
-            ):
-
-                try:
-
-                    delta_signal = get_signals(
-                        pos_symbol
-                    )
-
-                    if isinstance(
-                        delta_signal,
-                        dict,
-                    ):
-
-                        ltp = safe_float(
-                            delta_signal.get(
-                                "Price",
-                                delta_signal.get(
-                                    "Close",
-                                    0,
-                                ),
-                            )
-                        )
-
-                    else:
-
-                        ltp = 0.0
-
-                except Exception:
-
-                    ltp = 0.0
-
-            else:
-
-                ltp = current_price
-
-
-            # ------------------------------------------------
-            # P&L
-            # ------------------------------------------------
-
-            if (
-                ltp > 0
-                and qty > 0
-            ):
-
-                if pos_side == "SHORT":
-
-                    pnl = (
-                        entry
-                        - ltp
-                    ) * qty
-
-                else:
-
-                    pnl = (
-                        ltp
-                        - entry
-                    ) * qty
-
-            else:
-
-                pnl = 0.0
-
-
-            # ------------------------------------------------
-            # SL / TARGET
-            # ------------------------------------------------
-
-            stoploss = safe_float(
-                position.get(
-                    "stoploss",
-                    position.get(
-                        "stop_loss",
-                        0,
-                    ),
-                )
-            )
-
-
-            target = safe_float(
-                position.get(
-                    "target",
-                    0,
-                )
-            )
-
-
-            # ------------------------------------------------
-            # DISPLAY
-            # ------------------------------------------------
-
-            if is_delta_symbol(
-                pos_symbol
-            ):
-
-                entry_display = (
-                    f"${entry:,.8f}"
-                )
-
-                ltp_display = (
-                    f"${ltp:,.8f}"
-                    if ltp > 0
-                    else "N/A"
-                )
-
-                stop_display = (
-                    f"${stoploss:,.8f}"
-                    if stoploss > 0
-                    else "N/A"
-                )
-
-                target_display = (
-                    f"${target:,.8f}"
-                    if target > 0
-                    else "N/A"
-                )
-
-                pnl_display = (
-                    f"${pnl:,.8f}"
-                )
-
-            else:
-
-                entry_display = (
-                    f"₹{entry:,.2f}"
-                )
-
-                ltp_display = (
-                    f"₹{ltp:,.2f}"
-                    if ltp > 0
-                    else "N/A"
-                )
-
-                stop_display = (
-                    f"₹{stoploss:,.2f}"
-                    if stoploss > 0
-                    else "N/A"
-                )
-
-                target_display = (
-                    f"₹{target:,.2f}"
-                    if target > 0
-                    else "N/A"
-                )
-
-                pnl_display = (
-                    f"₹{pnl:,.2f}"
-                )
-
-
-            rows.append({
-
-                "Position":
-                    pos_side,
-
-                "Symbol":
-                    pos_symbol,
-
-                "Option":
-                    pos_option,
-
-                "Entry":
-                    entry_display,
-
-                "LTP":
-                    ltp_display,
-
-                "Qty":
-                    qty,
-
-                "Stop Loss":
-                    stop_display,
-
-                "Target":
-                    target_display,
-
-                "P&L":
-                    pnl_display,
-            })
-
-
-        if rows:
-
-            st.table(
-                rows
-            )
-
-        else:
-
-            st.info(
-                "No valid active positions."
-            )
-
-    else:
-
-        st.info(
-            "No active positions."
-        )
-
-
-    # ========================================================
     # DETAILED DASHBOARD PAGE
     # ========================================================
-    #
-    # THIS IS THE MAIN FIX.
-    #
-    # Indian OPTIONS:
-    #     symbol = selected underlying
-    #     trade_symbol = None
-    #
-    # Delta FUTURES:
-    #     symbol = selected futures
-    #     trade_symbol = selected futures
-    #
-    # Therefore pages/dashboard_page.py will not accidentally
-    # fall back to ^NSEI when BANKNIFTY/SENSEX/etc. is selected.
-    #
-    # ========================================================
 
     try:
 
-        if market_type == "FUTURES" and futures_symbol:
+        if (
+            market_type == "FUTURES"
+            and futures_symbol
+        ):
 
             detailed_dashboard_symbol = futures_symbol
 
@@ -3764,7 +3028,11 @@ if page == "🏠 Dashboard":
 
 
         # ----------------------------------------------------
-        # Call detailed dashboard.
+        # MAIN DETAILED DASHBOARD
+        #
+        # IMPORTANT:
+        # default_quantity sends selected option lot quantity
+        # into pages/dashboard_page.py
         # ----------------------------------------------------
 
         dashboard_page(
@@ -3778,6 +3046,10 @@ if page == "🏠 Dashboard":
             market_type=market_type,
 
             trade_symbol=detailed_trade_symbol,
+
+            default_quantity=int(
+                quantity
+            ),
 
         )
 
@@ -3941,8 +3213,6 @@ elif page == "⚙ Settings":
 # ============================================================
 # AUTO REFRESH
 # ============================================================
-# 15 seconds
-# ============================================================
 
 try:
 
@@ -3967,17 +3237,3 @@ st.caption(
     "AI Trading Terminal"
 )
 
-
-ist = ZoneInfo(
-    "Asia/Kolkata"
-)
-
-st.caption(
-    "Last Refresh: "
-    + datetime.now(
-        ist
-    ).strftime(
-        "%Y-%m-%d %H:%M:%S"
-    )
-    + " IST"
-)

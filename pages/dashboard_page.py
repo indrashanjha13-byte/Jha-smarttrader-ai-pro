@@ -542,9 +542,25 @@ def account_summary(
 
     c1, c2, c3, c4 = st.columns(4)
 
+    if is_delta_symbol(symbol):
+
+        balance_text = f"${balance:,.8f}"
+        cash_text = f"${balance:,.8f}"
+
+        if not position:
+            pnl_text = "$0.00000000"
+
+    else:
+
+        balance_text = f"₹{balance:,.2f}"
+        cash_text = f"₹{balance:,.2f}"
+
+        if not position:
+            pnl_text = "₹0.00"
+
     c1.metric(
         "💰 Balance",
-        f"₹{balance:,.2f}",
+        balance_text,
     )
 
     c2.metric(
@@ -559,7 +575,7 @@ def account_summary(
 
     c4.metric(
         "💵 Cash",
-        f"₹{balance:,.2f}",
+        cash_text,
     )
 
 
@@ -1297,14 +1313,6 @@ def detect_chart_patterns(data):
 
             prev_close = safe_float(
                 data["Close"].iloc[i - 1]
-            )
-
-            prev_high = safe_float(
-                data["High"].iloc[i - 1]
-            )
-
-            prev_low = safe_float(
-                data["Low"].iloc[i - 1]
             )
 
             curr_open = safe_float(
@@ -2763,6 +2771,7 @@ def risk_manager(
     display_price,
     is_delta,
     active_symbol=None,
+    default_quantity=1,
 ):
 
     st.subheader(
@@ -2918,15 +2927,24 @@ def risk_manager(
     )
 
     # =====================================================
-    # OLD WORKING ORDER QUANTITY
-    # DEFAULT = 400
+    # DYNAMIC ORDER QUANTITY
     # =====================================================
+
+    safe_default_quantity = max(
+        1,
+        int(
+            safe_float(
+                default_quantity,
+                1,
+            )
+        ),
+    )
 
     order_quantity = st.number_input(
         "Order Quantity",
         min_value=1,
         max_value=1000000,
-        value=400,
+        value=safe_default_quantity,
         step=1,
         key=quantity_key,
     )
@@ -2987,7 +3005,6 @@ def risk_manager(
 
     # =====================================================
     # TOTAL RISK / TOTAL REWARD
-    # USING ORDER QUANTITY = 400 BY DEFAULT
     # =====================================================
 
     total_risk = (
@@ -3001,87 +3018,150 @@ def risk_manager(
     )
 
     # =====================================================
-    # DISPLAY
+    # LARGE RISK / REWARD CARDS
     # =====================================================
 
     st.divider()
 
-    c1, c2, c3 = st.columns(3)
+    st.markdown(
+        """
+        <style>
+        .risk-summary-card {
+            border: 1px solid rgba(128,128,128,0.35);
+            border-radius: 14px;
+            padding: 18px 10px;
+            text-align: center;
+            min-height: 125px;
+            margin-bottom: 12px;
+        }
+
+        .risk-summary-title {
+            font-size: 17px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .risk-summary-value {
+            font-size: 30px;
+            font-weight: 800;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
     if is_delta:
 
-        c1.metric(
-            "Risk Amount",
-            f"${risk_amount:,.2f}",
+        risk_display = (
+            f"${total_risk:,.8f}"
         )
 
-        c2.metric(
-            "Reward",
-            f"${total_reward:,.8f}",
-        )
-
-        c3.metric(
-            "Risk / Reward",
-            (
-                f"1 : "
-                f"{reward_risk_ratio:.2f}"
-            ),
+        reward_display = (
+            f"${total_reward:,.8f}"
         )
 
     else:
 
-        c1.metric(
-            "Risk Amount",
-            f"₹{risk_amount:,.2f}",
+        risk_display = (
+            f"₹{total_risk:,.2f}"
         )
 
-        c2.metric(
-            "Reward",
-            f"₹{total_reward:,.2f}",
+        reward_display = (
+            f"₹{total_reward:,.2f}"
         )
 
-        c3.metric(
-            "Risk / Reward",
-            (
-                f"1 : "
-                f"{reward_risk_ratio:.2f}"
-            ),
+    rr_display = (
+        f"1 : {reward_risk_ratio:.2f}"
+    )
+
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+
+        st.markdown(
+            f"""
+            <div class="risk-summary-card">
+                <div class="risk-summary-title">
+                    🛡 TOTAL RISK
+                </div>
+                <div class="risk-summary-value">
+                    {risk_display}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
+
+    with c2:
+
+        st.markdown(
+            f"""
+            <div class="risk-summary-card">
+                <div class="risk-summary-title">
+                    🎯 TOTAL REWARD
+                </div>
+                <div class="risk-summary-value">
+                    {reward_display}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with c3:
+
+        st.markdown(
+            f"""
+            <div class="risk-summary-card">
+                <div class="risk-summary-title">
+                    ⚖️ RISK / REWARD
+                </div>
+                <div class="risk-summary-value">
+                    {rr_display}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    # =====================================================
+    # DETAILED RISK INFORMATION
+    # =====================================================
 
     c4, c5, c6 = st.columns(3)
 
     if is_delta:
 
         c4.metric(
+            "Risk Amount",
+            f"${risk_amount:,.8f}",
+        )
+
+        c5.metric(
             "Risk / Unit",
             f"${risk_per_unit:,.8f}",
         )
 
-        c5.metric(
+        c6.metric(
             "Reward / Unit",
             f"${reward_per_unit:,.8f}",
-        )
-
-        c6.metric(
-            "Total Risk",
-            f"${total_risk:,.8f}",
         )
 
     else:
 
         c4.metric(
+            "Risk Amount",
+            f"₹{risk_amount:,.2f}",
+        )
+
+        c5.metric(
             "Risk / Unit",
             f"₹{risk_per_unit:,.2f}",
         )
 
-        c5.metric(
+        c6.metric(
             "Reward / Unit",
             f"₹{reward_per_unit:,.2f}",
-        )
-
-        c6.metric(
-            "Total Risk",
-            f"₹{total_risk:,.2f}",
         )
 
     # =====================================================
@@ -3101,6 +3181,10 @@ def risk_manager(
         f"Mathematical Risk Quantity: "
         f"{mathematical_qty:,}"
     )
+
+    # =====================================================
+    # RISK / REWARD STATUS
+    # =====================================================
 
     if reward_risk_ratio >= 2:
 
@@ -3131,6 +3215,13 @@ def risk_manager(
             "quantity remains controlled by TradeManager."
         )
 
+    else:
+
+        st.caption(
+            "Indian market order quantity follows "
+            "the selected instrument lot size × selected lots."
+        )
+
     return {
         "entry": entry,
         "stop": stop,
@@ -3159,6 +3250,7 @@ def dashboard_page(
     trade_symbol=None,
     market_status_value=None,
     market_message=None,
+    default_quantity=1,
 ):
 
     # =====================================================
@@ -3468,6 +3560,7 @@ def dashboard_page(
         display_price=display_price,
         is_delta=is_delta,
         active_symbol=active_symbol,
+        default_quantity=default_quantity,
     )
 
     st.divider()
