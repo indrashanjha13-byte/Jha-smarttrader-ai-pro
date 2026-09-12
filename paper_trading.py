@@ -22,11 +22,11 @@ except ImportError:
 
 class PaperTrader:
     """
-    Paper Trading Engine.
+    Paper Trading Engine
 
     Indian Options:
-        CE -> BUY
-        PE -> BUY
+        CE -> BUY only
+        PE -> BUY only
         SELL -> EXIT existing BUY
 
     Delta Futures:
@@ -35,17 +35,7 @@ class PaperTrader:
         SELL on LONG  -> CLOSE LONG
         BUY  on SHORT -> CLOSE SHORT
 
-    Supports:
-        - Multiple positions
-        - Target
-        - Initial Stoploss
-        - Trailing Stoploss
-        - Automatic Target / SL / Trailing SL
-        - LONG P&L
-        - SHORT P&L
-        - Trade history CSV
-
-    LIVE BROKER ORDERS ARE NOT USED.
+    No live broker orders are executed here.
     """
 
     # =====================================================
@@ -56,14 +46,14 @@ class PaperTrader:
 
         self.balance = float(initial_balance)
 
-        # Multiple positions
+        # Multiple independent positions
         self.positions = {}
 
         # Backward compatibility
         self.position = None
 
     # =====================================================
-    # DELTA DETECTION
+    # DELTA SYMBOL DETECTION
     # =====================================================
 
     @staticmethod
@@ -89,33 +79,121 @@ class PaperTrader:
             "ETHUSDT",
         }
 
-        if s in delta_symbols:
-            return True
-
-        return (
-            s.endswith("USD")
-            or s.endswith("USDT")
-        )
+        return s in delta_symbols
 
     # =====================================================
     # POSITION KEY
     # =====================================================
 
-    def _position_key(
+    def _position_key(self, symbol, option_mode="N/A",
+                      strike=None, expiry=None):
+
+        symbol = str(symbol or "").strip().upper()
+        option_mode = str(option_mode or "N/A").strip().upper()
+
+        # Delta / normal instrument
+        if option_mode == "N/A":
+            return f"{symbol}_N/A"
+
+        # Option identity
+        strike_text = ""
+
+        if strike is not None:
+            try:
+                strike_text = str(int(float(strike)))
+            except Exception:
+                strike_text = str(strike).strip()
+
+        expiry_text = str(expiry or "").strip().upper()
+
+        return (
+            f"{symbol}_{option_mode}_"
+            f"{strike_text}_{expiry_text}"
+        )
+
+    # =====================================================
+    # FIND POSITION KEY
+    # =====================================================
+
+    def _find_position_key(
         self,
         symbol,
-        option_mode="N/A"
+        option_mode="N/A",
+        strike=None,
+        expiry=None
     ):
+        """
+        New exact lookup first.
+        Backward compatibility with old keys is preserved.
+        """
 
-        symbol = str(
-            symbol
-        ).strip().upper()
+        exact_key = self._position_key(
+            symbol,
+            option_mode,
+            strike,
+            expiry
+        )
 
-        option_mode = str(
+        if exact_key in self.positions:
+            return exact_key
+
+        # Old format compatibility
+        old_key = self._position_key(
+            symbol,
             option_mode
-        ).strip().upper()
+        )
 
-        return f"{symbol}_{option_mode}"
+        if old_key in self.positions:
+            return old_key
+
+        # Search by metadata for older/newer positions
+        symbol_u = str(symbol or "").strip().upper()
+        mode_u = str(option_mode or "N/A").strip().upper()
+
+        for key, position in self.positions.items():
+
+            if not isinstance(position, dict):
+                continue
+
+            if str(
+                position.get("symbol", "")
+            ).upper() != symbol_u:
+                continue
+
+            if str(
+                position.get("option_mode", "N/A")
+            ).upper() != mode_u:
+                continue
+
+            if strike is not None:
+
+                pos_strike = (
+                    position.get("strike")
+                    or (position.get("option_contract") or {}).get("strike")
+                )
+
+                if pos_strike is not None:
+
+                    try:
+                        if float(pos_strike) != float(strike):
+                            continue
+                    except Exception:
+                        if str(pos_strike) != str(strike):
+                            continue
+
+            if expiry is not None:
+
+                pos_expiry = (
+                    position.get("expiry")
+                    or (position.get("option_contract") or {}).get("expiry")
+                )
+
+                if str(pos_expiry or "").upper() != str(expiry).upper():
+                    continue
+
+            return key
+
+        return None
 
     # =====================================================
     # SYNC OLD POSITION
@@ -124,16 +202,35 @@ class PaperTrader:
     def _sync_position(self):
 
         if self.positions:
-
             self.position = next(
-                iter(
-                    self.positions.values()
-                )
+                iter(self.positions.values())
             )
-
         else:
-
             self.position = None
+
+    # =====================================================
+    # NORMALIZE CONTRACT
+    # =====================================================
+
+    @staticmethod
+    def _normalize_contract(option_contract):
+
+        if not isinstance(option_contract, dict):
+            return option_contract
+
+        contract = dict(option_contract)
+
+        if contract.get("option_type"):
+            contract["option_type"] = str(
+                contract["option_type"]
+            ).upper()
+
+        if contract.get("exchange"):
+            contract["exchange"] = str(
+                contract["exchange"]
+            ).upper()
+
+        return contract
 
     # =====================================================
     # BUY
@@ -152,44 +249,26 @@ class PaperTrader:
         option_mode="N/A",
         option_contract=None
     ):
-        """
-        Open BUY / LONG position.
-
-        For Indian Options:
-            CE / PE BUY
-
-        For Delta Futures:
-            BUY = LONG
-        """
 
         try:
 
             symbol = str(
-                symbol
+                symbol or ""
             ).strip().upper()
 
             option_mode = str(
-                option_mode
+                option_mode or "N/A"
             ).strip().upper()
-
-            # -------------------------------------------------
-            # Validate option mode
-            # -------------------------------------------------
 
             if option_mode not in (
                 "CE",
                 "PE",
                 "N/A"
             ):
-
                 return False, (
                     "❌ Invalid option mode. "
                     "Use CE, PE or N/A."
                 )
-
-            # -------------------------------------------------
-            # Convert values
-            # -------------------------------------------------
 
             price = float(price)
             qty = int(qty)
@@ -208,136 +287,101 @@ class PaperTrader:
                 trailing_distance
             )
 
-            # -------------------------------------------------
-            # Basic validation
-            # -------------------------------------------------
-
             if not symbol:
-
-                return False, (
-                    "❌ Invalid symbol"
-                )
+                return False, "❌ Invalid symbol"
 
             if price <= 0:
-
-                return False, (
-                    "❌ Invalid entry price"
-                )
+                return False, "❌ Invalid entry price"
 
             if qty <= 0:
-
-                return False, (
-                    "❌ Invalid quantity"
-                )
+                return False, "❌ Invalid quantity"
 
             if target <= price:
-
                 return False, (
-                    "❌ BUY/LONG target "
-                    "must be above entry"
+                    "❌ BUY target must be above entry"
                 )
 
             if stoploss >= price:
-
                 return False, (
-                    "❌ BUY/LONG stoploss "
-                    "must be below entry"
+                    "❌ BUY stoploss must be below entry"
                 )
-
-            # -------------------------------------------------
-            # Trailing validation
-            # -------------------------------------------------
 
             if trailing_enabled:
 
                 if trailing_start <= 0:
-
                     return False, (
                         "❌ Invalid trailing start"
                     )
 
                 if trailing_distance <= 0:
-
                     return False, (
                         "❌ Invalid trailing distance"
                     )
 
                 if trailing_distance >= trailing_start:
-
                     return False, (
-                        "❌ Trailing distance should "
-                        "be less than trailing start"
+                        "❌ Trailing distance must be "
+                        "less than trailing start"
                     )
 
-            # -------------------------------------------------
-            # Position key
-            # -------------------------------------------------
+            option_contract = self._normalize_contract(
+                option_contract
+            )
+
+            strike = None
+            expiry = None
+
+            if isinstance(option_contract, dict):
+
+                strike = option_contract.get("strike")
+                expiry = option_contract.get("expiry")
 
             position_key = self._position_key(
                 symbol,
-                option_mode
+                option_mode,
+                strike,
+                expiry
             )
-
-            # -------------------------------------------------
-            # Duplicate protection
-            # -------------------------------------------------
 
             if position_key in self.positions:
 
-                existing = self.positions[
-                    position_key
-                ]
-
-                existing_side = existing.get(
-                    "side",
-                    "BUY"
-                )
-
                 return False, (
-                    f"⚠️ {symbol} "
-                    f"{option_mode} "
-                    f"{existing_side} "
+                    f"⚠️ {symbol} {option_mode} "
                     f"position already exists"
                 )
-
-            # -------------------------------------------------
-            # Required capital
-            # -------------------------------------------------
 
             cost = price * qty
 
             if cost > self.balance:
-
                 return False, (
-                    "❌ Insufficient "
-                    "Paper Trading Balance"
+                    "❌ Insufficient Paper Trading Balance"
                 )
-
-            # -------------------------------------------------
-            # Deduct capital
-            # -------------------------------------------------
 
             self.balance -= cost
 
-            # -------------------------------------------------
-            # Create LONG position
-            # -------------------------------------------------
-
             position = {
+
+                "position_key": position_key,
 
                 "symbol": symbol,
 
                 "option_mode": option_mode,
 
-                "option_contract": (
-                    option_contract
-                ),
+                "option_contract": option_contract,
+
+                "strike": strike,
+
+                "expiry": expiry,
 
                 "side": "BUY",
 
                 "position_side": "LONG",
 
                 "entry": price,
+
+                "current_price": price,
+
+                "last_price": price,
 
                 "qty": qty,
 
@@ -347,17 +391,11 @@ class PaperTrader:
 
                 "initial_stoploss": stoploss,
 
-                "trailing_enabled": (
-                    trailing_enabled
-                ),
+                "trailing_enabled": trailing_enabled,
 
-                "trailing_start": (
-                    trailing_start
-                ),
+                "trailing_start": trailing_start,
 
-                "trailing_distance": (
-                    trailing_distance
-                ),
+                "trailing_distance": trailing_distance,
 
                 "highest_price": price,
 
@@ -370,19 +408,9 @@ class PaperTrader:
                 "status": "OPEN"
             }
 
-            # -------------------------------------------------
-            # Save
-            # -------------------------------------------------
-
-            self.positions[
-                position_key
-            ] = position
+            self.positions[position_key] = position
 
             self._sync_position()
-
-            # -------------------------------------------------
-            # Trade history
-            # -------------------------------------------------
 
             self.save_trade(
                 action="BUY",
@@ -397,43 +425,29 @@ class PaperTrader:
             )
 
             logging.info(
-                f"🟢 PAPER LONG | "
+                f"🟢 PAPER BUY | "
                 f"{symbol} {option_mode} | "
-                f"Entry={price} | "
-                f"Qty={qty} | "
-                f"Target={target} | "
-                f"SL={stoploss}"
+                f"Entry={price} | Qty={qty} | "
+                f"Target={target} | SL={stoploss}"
             )
 
             return True, {
-
+                "status": "success",
                 "action": "BUY",
-
                 "symbol": symbol,
-
                 "option_mode": option_mode,
-
-                "option_contract": (
-                    option_contract
-                ),
-
+                "option_contract": option_contract,
+                "strike": strike,
+                "expiry": expiry,
                 "side": "BUY",
-
                 "position_side": "LONG",
-
                 "entry": price,
-
                 "qty": qty,
-
                 "target": target,
-
                 "stoploss": stoploss,
-
-                "trailing_enabled": (
-                    trailing_enabled
-                ),
-
-                "status": "OPEN"
+                "trailing_enabled": trailing_enabled,
+                "position_key": position_key,
+                "status_position": "OPEN"
             }
 
         except Exception as e:
@@ -461,53 +475,28 @@ class PaperTrader:
         option_mode="N/A",
         option_contract=None
     ):
-        """
-        Open SHORT position.
-
-        Intended primarily for Delta Futures.
-
-        SHORT:
-            Target < Entry
-            Stoploss > Entry
-        """
 
         try:
 
             symbol = str(
-                symbol
+                symbol or ""
             ).strip().upper()
 
             option_mode = str(
-                option_mode
+                option_mode or "N/A"
             ).strip().upper()
 
-            # -------------------------------------------------
-            # SHORT restricted to Delta Futures
-            # -------------------------------------------------
-
-            if not self.is_delta_symbol(
-                symbol
-            ):
-
+            if not self.is_delta_symbol(symbol):
                 return False, (
                     "❌ SHORT is supported "
                     "only for Delta Futures"
                 )
 
-            # -------------------------------------------------
-            # Option mode
-            # -------------------------------------------------
-
             if option_mode != "N/A":
-
                 return False, (
                     "❌ Delta Futures SHORT "
                     "must use option_mode=N/A"
                 )
-
-            # -------------------------------------------------
-            # Convert
-            # -------------------------------------------------
 
             price = float(price)
             qty = int(qty)
@@ -526,129 +515,78 @@ class PaperTrader:
                 trailing_distance
             )
 
-            # -------------------------------------------------
-            # Validate
-            # -------------------------------------------------
-
-            if not symbol:
-
-                return False, (
-                    "❌ Invalid symbol"
-                )
-
             if price <= 0:
-
                 return False, (
                     "❌ Invalid short entry price"
                 )
 
             if qty <= 0:
-
                 return False, (
                     "❌ Invalid quantity"
                 )
 
             if target >= price:
-
                 return False, (
-                    "❌ SHORT target "
-                    "must be below entry"
+                    "❌ SHORT target must be below entry"
                 )
 
             if stoploss <= price:
-
                 return False, (
-                    "❌ SHORT stoploss "
-                    "must be above entry"
+                    "❌ SHORT stoploss must be above entry"
                 )
-
-            # -------------------------------------------------
-            # Trailing validation
-            # -------------------------------------------------
 
             if trailing_enabled:
 
                 if trailing_start <= 0:
-
-                    return False, (
-                        "❌ Invalid trailing start"
-                    )
+                    return False, "❌ Invalid trailing start"
 
                 if trailing_distance <= 0:
-
-                    return False, (
-                        "❌ Invalid trailing distance"
-                    )
+                    return False, "❌ Invalid trailing distance"
 
                 if trailing_distance >= trailing_start:
-
                     return False, (
-                        "❌ Trailing distance should "
-                        "be less than trailing start"
+                        "❌ Trailing distance must be "
+                        "less than trailing start"
                     )
-
-            # -------------------------------------------------
-            # Position key
-            # -------------------------------------------------
 
             position_key = self._position_key(
                 symbol,
                 "N/A"
             )
 
-            # -------------------------------------------------
-            # Duplicate
-            # -------------------------------------------------
-
             if position_key in self.positions:
-
-                existing = self.positions[
-                    position_key
-                ]
-
                 return False, (
-                    f"⚠️ {symbol} "
-                    f"SHORT position already exists"
+                    f"⚠️ {symbol} SHORT position already exists"
                 )
-
-            # -------------------------------------------------
-            # Margin / paper capital
-            # -------------------------------------------------
 
             margin = price * qty
 
             if margin > self.balance:
-
                 return False, (
-                    "❌ Insufficient "
-                    "Paper Trading Balance"
+                    "❌ Insufficient Paper Trading Balance"
                 )
-
-            # -------------------------------------------------
-            # Reserve margin
-            # -------------------------------------------------
 
             self.balance -= margin
 
-            # -------------------------------------------------
-            # Create SHORT
-            # -------------------------------------------------
-
             position = {
+
+                "position_key": position_key,
 
                 "symbol": symbol,
 
                 "option_mode": "N/A",
 
-                "option_contract": (
-                    option_contract
-                ),
+                "option_contract": option_contract,
 
                 "side": "SELL",
 
                 "position_side": "SHORT",
 
                 "entry": price,
+
+                "current_price": price,
+
+                "last_price": price,
 
                 "qty": qty,
 
@@ -658,17 +596,11 @@ class PaperTrader:
 
                 "initial_stoploss": stoploss,
 
-                "trailing_enabled": (
-                    trailing_enabled
-                ),
+                "trailing_enabled": trailing_enabled,
 
-                "trailing_start": (
-                    trailing_start
-                ),
+                "trailing_start": trailing_start,
 
-                "trailing_distance": (
-                    trailing_distance
-                ),
+                "trailing_distance": trailing_distance,
 
                 "highest_price": price,
 
@@ -681,19 +613,9 @@ class PaperTrader:
                 "status": "OPEN"
             }
 
-            # -------------------------------------------------
-            # Save
-            # -------------------------------------------------
-
-            self.positions[
-                position_key
-            ] = position
+            self.positions[position_key] = position
 
             self._sync_position()
-
-            # -------------------------------------------------
-            # History
-            # -------------------------------------------------
 
             self.save_trade(
                 action="SHORT",
@@ -709,38 +631,23 @@ class PaperTrader:
 
             logging.info(
                 f"🔴 PAPER SHORT | "
-                f"{symbol} | "
-                f"Entry={price} | "
-                f"Qty={qty} | "
-                f"Target={target} | "
-                f"SL={stoploss}"
+                f"{symbol} | Entry={price} | "
+                f"Qty={qty} | Target={target} | SL={stoploss}"
             )
 
             return True, {
-
+                "status": "success",
                 "action": "SHORT",
-
                 "symbol": symbol,
-
                 "option_mode": "N/A",
-
                 "side": "SELL",
-
                 "position_side": "SHORT",
-
                 "entry": price,
-
                 "qty": qty,
-
                 "target": target,
-
                 "stoploss": stoploss,
-
-                "trailing_enabled": (
-                    trailing_enabled
-                ),
-
-                "status": "OPEN"
+                "position_key": position_key,
+                "status_position": "OPEN"
             }
 
         except Exception as e:
@@ -752,6 +659,49 @@ class PaperTrader:
             return False, f"Error: {e}"
 
     # =====================================================
+    # UPDATE CURRENT PRICE
+    # =====================================================
+
+    def update_position_price(
+        self,
+        current_price,
+        symbol=None,
+        option_mode=None,
+        strike=None,
+        expiry=None
+    ):
+
+        try:
+
+            price = float(current_price)
+
+            if price <= 0:
+                return False
+
+            key = self._find_position_key(
+                symbol,
+                option_mode or "N/A",
+                strike,
+                expiry
+            )
+
+            if key is None:
+                return False
+
+            position = self.positions.get(key)
+
+            if position is None:
+                return False
+
+            position["current_price"] = price
+            position["last_price"] = price
+
+            return True
+
+        except Exception:
+            return False
+
+    # =====================================================
     # TRAILING STOPLOSS
     # =====================================================
 
@@ -759,37 +709,25 @@ class PaperTrader:
         self,
         current_price,
         symbol=None,
-        option_mode=None
+        option_mode=None,
+        strike=None,
+        expiry=None
     ):
-        """
-        LONG:
-            Highest price tracked.
-            SL moves upward.
-
-        SHORT:
-            Lowest price tracked.
-            SL moves downward.
-        """
 
         try:
 
-            current_price = float(
-                current_price
-            )
+            current_price = float(current_price)
 
             if current_price <= 0:
-
                 return None
-
-            # -------------------------------------------------
-            # Find position
-            # -------------------------------------------------
 
             if symbol is not None:
 
-                position_key = self._position_key(
+                position_key = self._find_position_key(
                     symbol,
-                    option_mode or "N/A"
+                    option_mode or "N/A",
+                    strike,
+                    expiry
                 )
 
                 position = self.positions.get(
@@ -799,10 +737,13 @@ class PaperTrader:
             else:
 
                 position = self.position
+                position_key = None
 
             if position is None:
-
                 return None
+
+            position["current_price"] = current_price
+            position["last_price"] = current_price
 
             side = position.get(
                 "position_side",
@@ -813,15 +754,12 @@ class PaperTrader:
                 position["entry"]
             )
 
-            trailing_enabled = bool(
+            if not bool(
                 position.get(
                     "trailing_enabled",
                     False
                 )
-            )
-
-            if not trailing_enabled:
-
+            ):
                 return None
 
             trailing_start = float(
@@ -838,9 +776,9 @@ class PaperTrader:
                 )
             )
 
-            # =================================================
-            # LONG TRAILING
-            # =================================================
+            # -------------------------------------------------
+            # LONG
+            # -------------------------------------------------
 
             if side == "LONG":
 
@@ -885,18 +823,11 @@ class PaperTrader:
                             "stoploss"
                         ] = new_stoploss
 
-                        logging.info(
-                            f"📈 LONG TRAILING SL | "
-                            f"{position['symbol']} | "
-                            f"Old={old_stoploss} | "
-                            f"New={new_stoploss}"
-                        )
-
                         return new_stoploss
 
-            # =================================================
-            # SHORT TRAILING
-            # =================================================
+            # -------------------------------------------------
+            # SHORT
+            # -------------------------------------------------
 
             elif side == "SHORT":
 
@@ -935,19 +866,11 @@ class PaperTrader:
                         position["stoploss"]
                     )
 
-                    # SHORT SL only moves DOWN
                     if new_stoploss < old_stoploss:
 
                         position[
                             "stoploss"
                         ] = new_stoploss
-
-                        logging.info(
-                            f"📉 SHORT TRAILING SL | "
-                            f"{position['symbol']} | "
-                            f"Old={old_stoploss} | "
-                            f"New={new_stoploss}"
-                        )
 
                         return new_stoploss
 
@@ -960,7 +883,7 @@ class PaperTrader:
         return None
 
     # =====================================================
-    # SELL / EXIT
+    # SELL / CLOSE LONG
     # =====================================================
 
     def sell(
@@ -968,36 +891,25 @@ class PaperTrader:
         current_price,
         exit_reason="MANUAL",
         symbol=None,
-        option_mode=None
+        option_mode=None,
+        strike=None,
+        expiry=None
     ):
-        """
-        SELL closes an existing BUY/LONG position.
-
-        For SHORT position:
-            use cover_short().
-        """
 
         try:
 
-            current_price = float(
-                current_price
-            )
+            current_price = float(current_price)
 
             if current_price <= 0:
-
-                return False, (
-                    "❌ Invalid exit price"
-                )
-
-            # -------------------------------------------------
-            # Find
-            # -------------------------------------------------
+                return False, "❌ Invalid exit price"
 
             if symbol is not None:
 
-                position_key = self._position_key(
+                position_key = self._find_position_key(
                     symbol,
-                    option_mode or "N/A"
+                    option_mode or "N/A",
+                    strike,
+                    expiry
                 )
 
                 position = self.positions.get(
@@ -1006,51 +918,45 @@ class PaperTrader:
 
             else:
 
-                if self.position is None:
+                position = self.position
 
+                if position is None:
                     return False, (
                         "❌ No Active Position Found"
                     )
 
-                position = self.position
-
-                position_key = self._position_key(
-                    position.get("symbol"),
-                    position.get(
-                        "option_mode",
-                        "N/A"
-                    )
+                position_key = position.get(
+                    "position_key"
                 )
+
+                if not position_key:
+
+                    position_key = self._find_position_key(
+                        position.get("symbol"),
+                        position.get(
+                            "option_mode",
+                            "N/A"
+                        ),
+                        position.get("strike"),
+                        position.get("expiry")
+                    )
 
             if position is None:
-
                 return False, (
-                    "❌ No Active BUY/LONG "
-                    "Position Found"
+                    "❌ No Active BUY/LONG Position Found"
                 )
 
-            # -------------------------------------------------
-            # Only LONG
-            # -------------------------------------------------
-
-            side = position.get(
+            if position.get(
                 "position_side",
                 "LONG"
-            )
-
-            if side != "LONG":
+            ) != "LONG":
 
                 return False, (
                     "❌ This is a SHORT position. "
                     "Use cover_short()."
                 )
 
-            # -------------------------------------------------
-            # Data
-            # -------------------------------------------------
-
             symbol = position["symbol"]
-
             option_mode = position.get(
                 "option_mode",
                 "N/A"
@@ -1072,31 +978,16 @@ class PaperTrader:
                 position["stoploss"]
             )
 
-            # -------------------------------------------------
-            # LONG P&L
-            # -------------------------------------------------
-
             pnl = round(
-                (
-                    current_price
-                    - entry
-                ) * qty,
+                (current_price - entry) * qty,
                 2
             )
 
-            invested_capital = (
-                entry * qty
-            )
+            invested_capital = entry * qty
 
-            # Return capital + P&L
             self.balance += (
-                invested_capital
-                + pnl
+                invested_capital + pnl
             )
-
-            # -------------------------------------------------
-            # Save
-            # -------------------------------------------------
 
             self.save_trade(
                 action="SELL",
@@ -1110,34 +1001,17 @@ class PaperTrader:
                 side="LONG"
             )
 
-            # -------------------------------------------------
-            # Remove
-            # -------------------------------------------------
-
             if position_key in self.positions:
-
-                del self.positions[
-                    position_key
-                ]
+                del self.positions[position_key]
 
             self._sync_position()
-
-            # -------------------------------------------------
-            # Learning
-            # -------------------------------------------------
-
-            result_type = (
-                "WIN"
-                if pnl >= 0
-                else "LOSS"
-            )
 
             try:
 
                 update_learning(
                     "AI Combo",
                     symbol,
-                    result_type
+                    "WIN" if pnl >= 0 else "LOSS"
                 )
 
             except Exception:
@@ -1145,11 +1019,9 @@ class PaperTrader:
 
             logging.info(
                 f"🔚 PAPER LONG EXIT | "
-                f"{symbol} | "
+                f"{symbol} {option_mode} | "
                 f"Reason={exit_reason} | "
-                f"Entry={entry} | "
-                f"Exit={current_price} | "
-                f"Qty={qty} | "
+                f"Entry={entry} | Exit={current_price} | "
                 f"PNL={pnl}"
             )
 
@@ -1172,37 +1044,25 @@ class PaperTrader:
         current_price,
         exit_reason="MANUAL",
         symbol=None,
-        option_mode=None
+        option_mode=None,
+        strike=None,
+        expiry=None
     ):
-        """
-        Close an existing SHORT position.
-
-        SHORT P&L:
-
-            (Entry - Exit) * Qty
-        """
 
         try:
 
-            current_price = float(
-                current_price
-            )
+            current_price = float(current_price)
 
             if current_price <= 0:
-
-                return False, (
-                    "❌ Invalid cover price"
-                )
-
-            # -------------------------------------------------
-            # Find
-            # -------------------------------------------------
+                return False, "❌ Invalid cover price"
 
             if symbol is not None:
 
-                position_key = self._position_key(
+                position_key = self._find_position_key(
                     symbol,
-                    option_mode or "N/A"
+                    option_mode or "N/A",
+                    strike,
+                    expiry
                 )
 
                 position = self.positions.get(
@@ -1211,55 +1071,31 @@ class PaperTrader:
 
             else:
 
-                if self.position is None:
-
-                    return False, (
-                        "❌ No Active SHORT "
-                        "Position Found"
-                    )
-
                 position = self.position
 
-                position_key = self._position_key(
-                    position.get("symbol"),
-                    position.get(
-                        "option_mode",
-                        "N/A"
+                if position is None:
+                    return False, (
+                        "❌ No Active SHORT Position Found"
                     )
+
+                position_key = position.get(
+                    "position_key"
                 )
 
             if position is None:
-
                 return False, (
-                    "❌ No Active SHORT "
-                    "Position Found"
+                    "❌ No Active SHORT Position Found"
                 )
 
-            # -------------------------------------------------
-            # SHORT only
-            # -------------------------------------------------
-
-            side = position.get(
-                "position_side",
-                "LONG"
-            )
-
-            if side != "SHORT":
+            if position.get(
+                "position_side"
+            ) != "SHORT":
 
                 return False, (
                     "❌ Position is not SHORT"
                 )
 
-            # -------------------------------------------------
-            # Data
-            # -------------------------------------------------
-
             symbol = position["symbol"]
-
-            option_mode = position.get(
-                "option_mode",
-                "N/A"
-            )
 
             entry = float(
                 position["entry"]
@@ -1277,31 +1113,16 @@ class PaperTrader:
                 position["stoploss"]
             )
 
-            # -------------------------------------------------
-            # SHORT P&L
-            # -------------------------------------------------
-
             pnl = round(
-                (
-                    entry
-                    - current_price
-                ) * qty,
+                (entry - current_price) * qty,
                 2
             )
 
-            margin = (
-                entry * qty
-            )
+            margin = entry * qty
 
-            # Return margin + P&L
             self.balance += (
-                margin
-                + pnl
+                margin + pnl
             )
-
-            # -------------------------------------------------
-            # Save
-            # -------------------------------------------------
 
             self.save_trade(
                 action="COVER",
@@ -1315,48 +1136,21 @@ class PaperTrader:
                 side="SHORT"
             )
 
-            # -------------------------------------------------
-            # Remove
-            # -------------------------------------------------
-
             if position_key in self.positions:
-
-                del self.positions[
-                    position_key
-                ]
+                del self.positions[position_key]
 
             self._sync_position()
-
-            # -------------------------------------------------
-            # Learning
-            # -------------------------------------------------
-
-            result_type = (
-                "WIN"
-                if pnl >= 0
-                else "LOSS"
-            )
 
             try:
 
                 update_learning(
                     "AI Combo",
                     symbol,
-                    result_type
+                    "WIN" if pnl >= 0 else "LOSS"
                 )
 
             except Exception:
                 pass
-
-            logging.info(
-                f"🔚 PAPER SHORT COVER | "
-                f"{symbol} | "
-                f"Reason={exit_reason} | "
-                f"Entry={entry} | "
-                f"Exit={current_price} | "
-                f"Qty={qty} | "
-                f"PNL={pnl}"
-            )
 
             return True, pnl
 
@@ -1376,32 +1170,25 @@ class PaperTrader:
         self,
         current_price,
         symbol=None,
-        option_mode=None
+        option_mode=None,
+        strike=None,
+        expiry=None
     ):
-        """
-        Automatically checks Target / SL
-        for LONG and SHORT.
-        """
 
         try:
 
-            current_price = float(
-                current_price
-            )
+            current_price = float(current_price)
 
             if current_price <= 0:
-
                 return None
-
-            # -------------------------------------------------
-            # Find
-            # -------------------------------------------------
 
             if symbol is not None:
 
-                position_key = self._position_key(
+                position_key = self._find_position_key(
                     symbol,
-                    option_mode or "N/A"
+                    option_mode or "N/A",
+                    strike,
+                    expiry
                 )
 
                 position = self.positions.get(
@@ -1412,30 +1199,24 @@ class PaperTrader:
 
                 position = self.position
 
-                if position is not None:
+                if position is None:
+                    return None
 
-                    position_key = self._position_key(
-                        position.get("symbol"),
-                        position.get(
-                            "option_mode",
-                            "N/A"
-                        )
-                    )
-
-                else:
-
-                    position_key = None
+                position_key = position.get(
+                    "position_key"
+                )
 
             if position is None:
-
                 return None
 
             symbol = position["symbol"]
-
             option_mode = position.get(
                 "option_mode",
                 "N/A"
             )
+
+            position["current_price"] = current_price
+            position["last_price"] = current_price
 
             side = position.get(
                 "position_side",
@@ -1446,14 +1227,12 @@ class PaperTrader:
                 position["target"]
             )
 
-            # -------------------------------------------------
-            # Update trailing
-            # -------------------------------------------------
-
             self.update_trailing_stop(
                 current_price,
                 symbol,
-                option_mode
+                option_mode,
+                position.get("strike"),
+                position.get("expiry")
             )
 
             position = self.positions.get(
@@ -1461,7 +1240,6 @@ class PaperTrader:
             )
 
             if position is None:
-
                 return None
 
             stoploss = float(
@@ -1475,44 +1253,31 @@ class PaperTrader:
                 )
             )
 
-            # =================================================
-            # LONG
-            # =================================================
-
             if side == "LONG":
 
-                # TARGET
                 if current_price >= target:
 
                     success, result = self.sell(
                         current_price,
                         exit_reason="TARGET",
                         symbol=symbol,
-                        option_mode=option_mode
+                        option_mode=option_mode,
+                        strike=position.get("strike"),
+                        expiry=position.get("expiry")
                     )
 
                     if success:
 
                         return {
-
                             "status": "EXIT",
-
                             "reason": "TARGET",
-
-                            "message": (
-                                "🎯 LONG Target Hit"
-                            ),
-
+                            "message": "🎯 LONG Target Hit",
                             "symbol": symbol,
-
                             "option_mode": option_mode,
-
                             "side": "LONG",
-
                             "pnl": result
                         }
 
-                # STOPLOSS
                 if current_price <= stoploss:
 
                     reason = (
@@ -1525,74 +1290,50 @@ class PaperTrader:
                         current_price,
                         exit_reason=reason,
                         symbol=symbol,
+                        option_mode=option_mode,
+                        strike=position.get("strike"),
+                        expiry=position.get("expiry")
+                    )
+
+                    if success:
+
+                        return {
+                            "status": "EXIT",
+                            "reason": reason,
+                            "message": (
+                                "🔒 LONG Trailing Stoploss Hit"
+                                if trailing_active
+                                else "🛑 LONG Stoploss Hit"
+                            ),
+                            "symbol": symbol,
+                            "option_mode": option_mode,
+                            "side": "LONG",
+                            "pnl": result
+                        }
+
+            elif side == "SHORT":
+
+                if current_price <= target:
+
+                    success, result = self.cover_short(
+                        current_price,
+                        exit_reason="TARGET",
+                        symbol=symbol,
                         option_mode=option_mode
                     )
 
                     if success:
 
-                        message = (
-                            "🔒 LONG Trailing Stoploss Hit"
-                            if trailing_active
-                            else "🛑 LONG Stoploss Hit"
-                        )
-
                         return {
-
                             "status": "EXIT",
-
-                            "reason": reason,
-
-                            "message": message,
-
-                            "symbol": symbol,
-
-                            "option_mode": option_mode,
-
-                            "side": "LONG",
-
-                            "pnl": result
-                        }
-
-            # =================================================
-            # SHORT
-            # =================================================
-
-            elif side == "SHORT":
-
-                # TARGET BELOW ENTRY
-                if current_price <= target:
-
-                    success, result = (
-                        self.cover_short(
-                            current_price,
-                            exit_reason="TARGET",
-                            symbol=symbol,
-                            option_mode=option_mode
-                        )
-                    )
-
-                    if success:
-
-                        return {
-
-                            "status": "EXIT",
-
                             "reason": "TARGET",
-
-                            "message": (
-                                "🎯 SHORT Target Hit"
-                            ),
-
+                            "message": "🎯 SHORT Target Hit",
                             "symbol": symbol,
-
                             "option_mode": option_mode,
-
                             "side": "SHORT",
-
                             "pnl": result
                         }
 
-                # STOPLOSS ABOVE ENTRY
                 if current_price >= stoploss:
 
                     reason = (
@@ -1601,37 +1342,26 @@ class PaperTrader:
                         else "STOPLOSS"
                     )
 
-                    success, result = (
-                        self.cover_short(
-                            current_price,
-                            exit_reason=reason,
-                            symbol=symbol,
-                            option_mode=option_mode
-                        )
+                    success, result = self.cover_short(
+                        current_price,
+                        exit_reason=reason,
+                        symbol=symbol,
+                        option_mode=option_mode
                     )
 
                     if success:
 
-                        message = (
-                            "🔒 SHORT Trailing Stoploss Hit"
-                            if trailing_active
-                            else "🛑 SHORT Stoploss Hit"
-                        )
-
                         return {
-
                             "status": "EXIT",
-
                             "reason": reason,
-
-                            "message": message,
-
+                            "message": (
+                                "🔒 SHORT Trailing Stoploss Hit"
+                                if trailing_active
+                                else "🛑 SHORT Stoploss Hit"
+                            ),
                             "symbol": symbol,
-
                             "option_mode": option_mode,
-
                             "side": "SHORT",
-
                             "pnl": result
                         }
 
@@ -1647,70 +1377,55 @@ class PaperTrader:
     # AUTO EXIT ALL
     # =====================================================
 
-    def auto_exit_all(
-        self,
-        price_map
-    ):
+    def auto_exit_all(self, price_map):
 
         results = []
 
-        try:
+        if not isinstance(price_map, dict):
+            return results
 
-            for position_key in list(
-                self.positions.keys()
-            ):
+        for position_key in list(
+            self.positions.keys()
+        ):
 
-                position = self.positions.get(
-                    position_key
-                )
-
-                if position is None:
-                    continue
-
-                price = price_map.get(
-                    position_key
-                )
-
-                if price is None:
-                    continue
-
-                result = self.auto_exit(
-                    price,
-                    symbol=position["symbol"],
-                    option_mode=position.get(
-                        "option_mode",
-                        "N/A"
-                    )
-                )
-
-                if result is not None:
-
-                    results.append(result)
-
-        except Exception as e:
-
-            logging.exception(
-                f"❌ Auto Exit All Error: {e}"
+            position = self.positions.get(
+                position_key
             )
+
+            if not position:
+                continue
+
+            price = price_map.get(
+                position_key
+            )
+
+            if price is None:
+                continue
+
+            result = self.auto_exit(
+                price,
+                symbol=position["symbol"],
+                option_mode=position.get(
+                    "option_mode",
+                    "N/A"
+                ),
+                strike=position.get("strike"),
+                expiry=position.get("expiry")
+            )
+
+            if result:
+                results.append(result)
 
         return results
 
     # =====================================================
-    # MARKET CLOSE AUTO EXIT
+    # MARKET CLOSE
     # =====================================================
 
     def market_close_auto_exit(
         self,
         price_map=None
     ):
-        """
-        Force close remaining positions.
-
-        Dashboard already calls this only for
-        Indian market close.
-
-        Supports both LONG and SHORT safely.
-        """
 
         closed = []
         failed = []
@@ -1722,91 +1437,50 @@ class PaperTrader:
             if not positions:
 
                 return {
-
                     "status": "NO_POSITION",
-
                     "closed": [],
-
-                    "failed": []
+                    "failed": [],
+                    "count": 0
                 }
+
+            price_map = (
+                price_map
+                if isinstance(price_map, dict)
+                else {}
+            )
 
             for position_key, position in list(
                 positions.items()
             ):
 
-                if position is None:
+                if not position:
                     continue
 
-                symbol = str(
-                    position.get(
-                        "symbol",
-                        ""
-                    )
-                ).upper()
-
-                option_mode = str(
-                    position.get(
-                        "option_mode",
-                        "N/A"
-                    )
-                ).upper()
-
-                side = position.get(
-                    "position_side",
-                    "LONG"
+                exit_price = price_map.get(
+                    position_key
                 )
-
-                exit_price = None
-
-                if isinstance(
-                    price_map,
-                    dict
-                ):
-
-                    exit_price = price_map.get(
-                        position_key
-                    )
 
                 if exit_price is None:
 
                     failed.append({
-
-                        "position_key":
-                            position_key,
-
-                        "symbol":
-                            symbol,
-
-                        "option_mode":
-                            option_mode,
-
-                        "reason":
-                            "Latest price not available"
+                        "position_key": position_key,
+                        "symbol": position.get("symbol"),
+                        "option_mode": position.get(
+                            "option_mode",
+                            "N/A"
+                        ),
+                        "reason": "Latest price not available"
                     })
 
                     continue
 
                 try:
-
-                    exit_price = float(
-                        exit_price
-                    )
-
+                    exit_price = float(exit_price)
                 except Exception:
 
                     failed.append({
-
-                        "position_key":
-                            position_key,
-
-                        "symbol":
-                            symbol,
-
-                        "option_mode":
-                            option_mode,
-
-                        "reason":
-                            "Invalid exit price"
+                        "position_key": position_key,
+                        "reason": "Invalid exit price"
                     })
 
                     continue
@@ -1814,25 +1488,22 @@ class PaperTrader:
                 if exit_price <= 0:
 
                     failed.append({
-
-                        "position_key":
-                            position_key,
-
-                        "symbol":
-                            symbol,
-
-                        "option_mode":
-                            option_mode,
-
-                        "reason":
-                            "Exit price <= 0"
+                        "position_key": position_key,
+                        "reason": "Exit price <= 0"
                     })
 
                     continue
 
-                # -------------------------------------------------
-                # LONG
-                # -------------------------------------------------
+                symbol = position["symbol"]
+                option_mode = position.get(
+                    "option_mode",
+                    "N/A"
+                )
+
+                side = position.get(
+                    "position_side",
+                    "LONG"
+                )
 
                 if side == "LONG":
 
@@ -1840,80 +1511,46 @@ class PaperTrader:
                         exit_price,
                         exit_reason="MARKET_CLOSE",
                         symbol=symbol,
-                        option_mode=option_mode
+                        option_mode=option_mode,
+                        strike=position.get("strike"),
+                        expiry=position.get("expiry")
                     )
-
-                # -------------------------------------------------
-                # SHORT
-                # -------------------------------------------------
 
                 else:
 
-                    success, result = (
-                        self.cover_short(
-                            exit_price,
-                            exit_reason="MARKET_CLOSE",
-                            symbol=symbol,
-                            option_mode=option_mode
-                        )
+                    success, result = self.cover_short(
+                        exit_price,
+                        exit_reason="MARKET_CLOSE",
+                        symbol=symbol,
+                        option_mode=option_mode
                     )
 
                 if success:
 
                     closed.append({
-
-                        "position_key":
-                            position_key,
-
-                        "symbol":
-                            symbol,
-
-                        "option_mode":
-                            option_mode,
-
-                        "side":
-                            side,
-
-                        "exit_price":
-                            exit_price,
-
-                        "result":
-                            result
+                        "position_key": position_key,
+                        "symbol": symbol,
+                        "option_mode": option_mode,
+                        "side": side,
+                        "exit_price": exit_price,
+                        "result": result
                     })
 
                 else:
 
                     failed.append({
-
-                        "position_key":
-                            position_key,
-
-                        "symbol":
-                            symbol,
-
-                        "option_mode":
-                            option_mode,
-
-                        "side":
-                            side,
-
-                        "reason":
-                            result
+                        "position_key": position_key,
+                        "symbol": symbol,
+                        "option_mode": option_mode,
+                        "side": side,
+                        "reason": result
                     })
 
             return {
-
-                "status":
-                    "MARKET_CLOSE",
-
-                "closed":
-                    closed,
-
-                "failed":
-                    failed,
-
-                "count":
-                    len(closed)
+                "status": "MARKET_CLOSE",
+                "closed": closed,
+                "failed": failed,
+                "count": len(closed)
             }
 
         except Exception as e:
@@ -1923,18 +1560,10 @@ class PaperTrader:
             )
 
             return {
-
-                "status":
-                    "ERROR",
-
-                "closed":
-                    closed,
-
-                "failed":
-                    failed,
-
-                "message":
-                    str(e)
+                "status": "ERROR",
+                "closed": closed,
+                "failed": failed,
+                "message": str(e)
             }
 
     # =====================================================
@@ -1942,10 +1571,7 @@ class PaperTrader:
     # =====================================================
 
     def get_active_positions(self):
-
-        return dict(
-            self.positions
-        )
+        return dict(self.positions)
 
     # =====================================================
     # GET POSITION
@@ -1954,17 +1580,22 @@ class PaperTrader:
     def get_position(
         self,
         symbol,
-        option_mode="N/A"
+        option_mode="N/A",
+        strike=None,
+        expiry=None
     ):
 
-        key = self._position_key(
+        key = self._find_position_key(
             symbol,
-            option_mode
+            option_mode,
+            strike,
+            expiry
         )
 
-        return self.positions.get(
-            key
-        )
+        if key is None:
+            return None
+
+        return self.positions.get(key)
 
     # =====================================================
     # POSITION STATUS
@@ -1976,7 +1607,6 @@ class PaperTrader:
         option_mode=None
     ):
 
-        # Specific
         if symbol is not None:
 
             position = self.get_position(
@@ -1985,25 +1615,17 @@ class PaperTrader:
             )
 
             if position is None:
-
                 return None
 
             return self._format_position_status(
                 position
             )
 
-        # All
         if not self.positions:
-
             return None
 
         return {
-
-            key:
-                self._format_position_status(
-                    position
-                )
-
+            key: self._format_position_status(position)
             for key, position
             in self.positions.items()
         }
@@ -2012,92 +1634,89 @@ class PaperTrader:
     # FORMAT POSITION
     # =====================================================
 
-    def _format_position_status(
-        self,
-        position
-    ):
-
-        side = position.get(
-            "position_side",
-            "LONG"
-        )
+    def _format_position_status(self, position):
 
         return {
 
-            "symbol":
-                position.get("symbol"),
+            "position_key": position.get(
+                "position_key"
+            ),
 
-            "option_mode":
-                position.get(
-                    "option_mode",
-                    "N/A"
-                ),
+            "symbol": position.get("symbol"),
 
-            "side":
-                position.get(
-                    "side",
-                    "BUY"
-                ),
+            "option_mode": position.get(
+                "option_mode",
+                "N/A"
+            ),
 
-            "position_side":
-                side,
+            "strike": position.get("strike"),
 
-            "entry":
-                position.get("entry"),
+            "expiry": position.get("expiry"),
 
-            "current_stoploss":
-                position.get("stoploss"),
+            "option_contract": position.get(
+                "option_contract"
+            ),
 
-            "initial_stoploss":
-                position.get(
-                    "initial_stoploss"
-                ),
+            "side": position.get(
+                "side",
+                "BUY"
+            ),
 
-            "target":
-                position.get("target"),
+            "position_side": position.get(
+                "position_side",
+                "LONG"
+            ),
 
-            "qty":
-                position.get("qty"),
+            "entry": position.get("entry"),
 
-            "trailing_enabled":
-                position.get(
-                    "trailing_enabled",
-                    False
-                ),
+            "current_price": position.get(
+                "current_price"
+            ),
 
-            "trailing_active":
-                position.get(
-                    "trailing_active",
-                    False
-                ),
+            "current_stoploss": position.get(
+                "stoploss"
+            ),
 
-            "trailing_start":
-                position.get(
-                    "trailing_start",
-                    0
-                ),
+            "initial_stoploss": position.get(
+                "initial_stoploss"
+            ),
 
-            "trailing_distance":
-                position.get(
-                    "trailing_distance",
-                    0
-                ),
+            "target": position.get("target"),
 
-            "highest_price":
-                position.get(
-                    "highest_price"
-                ),
+            "qty": position.get("qty"),
 
-            "lowest_price":
-                position.get(
-                    "lowest_price"
-                ),
+            "trailing_enabled": position.get(
+                "trailing_enabled",
+                False
+            ),
 
-            "status":
-                position.get(
-                    "status",
-                    "OPEN"
-                )
+            "trailing_active": position.get(
+                "trailing_active",
+                False
+            ),
+
+            "trailing_start": position.get(
+                "trailing_start",
+                0
+            ),
+
+            "trailing_distance": position.get(
+                "trailing_distance",
+                0
+            ),
+
+            "highest_price": position.get(
+                "highest_price"
+            ),
+
+            "lowest_price": position.get(
+                "lowest_price"
+            ),
+
+            "status": position.get(
+                "status",
+                "OPEN"
+            )
         }
 
     # =====================================================
@@ -2105,67 +1724,49 @@ class PaperTrader:
     # =====================================================
 
     def get_balance(self):
-
-        return round(
-            self.balance,
-            2
-        )
+        return round(self.balance, 2)
 
     # =====================================================
     # OPEN P&L
     # =====================================================
 
-    def get_open_pnl(
-        self,
-        price_map
-    ):
+    def get_open_pnl(self, price_map):
 
         total_pnl = 0.0
 
+        if not isinstance(price_map, dict):
+            return 0.0
+
         try:
 
-            for key, position in (
-                self.positions.items()
-            ):
+            for key, position in self.positions.items():
 
-                current_price = price_map.get(
-                    key
-                )
+                current_price = price_map.get(key)
 
                 if current_price is None:
                     continue
 
-                entry = float(
-                    position["entry"]
-                )
+                current_price = float(current_price)
 
-                qty = int(
-                    position["qty"]
-                )
+                if current_price <= 0:
+                    continue
 
-                current_price = float(
-                    current_price
-                )
+                entry = float(position["entry"])
+                qty = int(position["qty"])
 
-                side = position.get(
+                if position.get(
                     "position_side",
                     "LONG"
-                )
-
-                # LONG
-                if side == "LONG":
+                ) == "LONG":
 
                     pnl = (
-                        current_price
-                        - entry
+                        current_price - entry
                     ) * qty
 
-                # SHORT
                 else:
 
                     pnl = (
-                        entry
-                        - current_price
+                        entry - current_price
                     ) * qty
 
                 total_pnl += pnl
@@ -2176,10 +1777,7 @@ class PaperTrader:
                 f"❌ Open P&L Error: {e}"
             )
 
-        return round(
-            total_pnl,
-            2
-        )
+        return round(total_pnl, 2)
 
     # =====================================================
     # SAVE TRADE
@@ -2197,17 +1795,10 @@ class PaperTrader:
         pnl,
         side=None
     ):
-        """
-        Save trade into trade_history.csv.
-
-        Compatible with old calls.
-        """
 
         try:
 
-            file_path = (
-                "trade_history.csv"
-            )
+            file_path = "trade_history.csv"
 
             file_exists = os.path.exists(
                 file_path
@@ -2215,9 +1806,7 @@ class PaperTrader:
 
             is_empty = (
                 not file_exists
-                or os.path.getsize(
-                    file_path
-                ) == 0
+                or os.path.getsize(file_path) == 0
             )
 
             with open(
@@ -2232,7 +1821,6 @@ class PaperTrader:
                 if is_empty:
 
                     writer.writerow([
-
                         "Date",
                         "Action",
                         "Symbol",
@@ -2246,35 +1834,24 @@ class PaperTrader:
                     ])
 
                 writer.writerow([
-
                     datetime.now().strftime(
                         "%Y-%m-%d %H:%M:%S"
                     ),
-
                     action,
-
                     symbol,
-
                     side or "",
-
                     entry,
-
                     exit_price,
-
                     qty,
-
                     target,
-
                     stoploss,
-
                     pnl
                 ])
 
         except Exception as e:
 
             logging.error(
-                f"❌ Failed to save "
-                f"trade history: {e}"
+                f"❌ Failed to save trade history: {e}"
             )
 
 
@@ -2289,78 +1866,35 @@ def check_exit(
     target_points=40,
     stoploss_points=20
 ):
-    """
-    BUY / LONG:
-        TARGET above entry
-        STOPLOSS below entry
-
-    SELL / SHORT:
-        TARGET below entry
-        STOPLOSS above entry
-    """
 
     try:
 
         entry = float(entry)
-
         current = float(current)
-
-        target_points = float(
-            target_points
-        )
-
-        stoploss_points = float(
-            stoploss_points
-        )
+        target_points = float(target_points)
+        stoploss_points = float(stoploss_points)
 
         action = str(
-            action
+            action or "BUY"
         ).upper()
 
-        # =================================================
-        # BUY / LONG
-        # =================================================
+        if action in ("BUY", "LONG"):
 
-        if action in (
-            "BUY",
-            "LONG"
-        ):
-
-            if current >= (
-                entry + target_points
-            ):
-
+            if current >= entry + target_points:
                 return "TARGET"
 
-            if current <= (
-                entry - stoploss_points
-            ):
-
+            if current <= entry - stoploss_points:
                 return "STOPLOSS"
 
-        # =================================================
-        # SELL / SHORT
-        # =================================================
+        elif action in ("SELL", "SHORT"):
 
-        elif action in (
-            "SELL",
-            "SHORT"
-        ):
-
-            if current <= (
-                entry - target_points
-            ):
-
+            if current <= entry - target_points:
                 return "TARGET"
 
-            if current >= (
-                entry + stoploss_points
-            ):
-
+            if current >= entry + stoploss_points:
                 return "STOPLOSS"
 
     except Exception:
-
         pass
 
     return None

@@ -2785,7 +2785,7 @@ def portfolio_section(
 ):
 
     st.subheader(
-        "📦 Portfolio "
+        "📦 Portfolio & Risk Management"
     )
 
     active_positions = get_active_positions(
@@ -3054,7 +3054,905 @@ def delta_execution_status(
         "Execution is controlled by "
         "TradeManager and auto-trader."
     )
+# =========================================================
+# RISK MANAGER
+# =========================================================
 
+def risk_manager(
+    trader,
+    display_price,
+    is_delta,
+    active_symbol=None,
+    default_quantity=1,
+    option_mode="CE",
+    option_ce_ltp=0.0,
+    option_pe_ltp=0.0,
+):
+    """
+    Central Risk Manager.
+
+    DELTA:
+        Single futures risk calculation.
+
+    CE:
+        CE-only risk calculation.
+
+    PE:
+        PE-only risk calculation.
+
+    ALL:
+        Independent CE + PE risk calculations.
+        Combined risk/reward is also displayed.
+
+    No live broker order is placed here.
+    """
+
+    st.subheader("🛡 Risk Management")
+
+    # =====================================================
+    # BASIC VALUES
+    # =====================================================
+
+    capital = safe_float(
+        getattr(trader, "balance", 0.0)
+    )
+
+    symbol_key = str(
+        active_symbol or "UNKNOWN"
+    ).strip().upper()
+
+    option_mode = str(
+        option_mode or "CE"
+    ).strip().upper()
+
+    if option_mode not in {"CE", "PE", "ALL"}:
+        option_mode = "CE"
+
+    option_ce_ltp = safe_float(option_ce_ltp)
+    option_pe_ltp = safe_float(option_pe_ltp)
+
+    safe_symbol_key = (
+        symbol_key
+        .replace("^", "")
+        .replace("-", "_")
+        .replace("/", "_")
+        .replace(" ", "_")
+        .replace(".", "_")
+    )
+
+    # =====================================================
+    # RISK %
+    # =====================================================
+
+    risk_key = (
+        f"dashboard_risk_percent_"
+        f"{safe_symbol_key}"
+    )
+
+    risk_percent = st.slider(
+        "Risk %",
+        min_value=1,
+        max_value=5,
+        value=2,
+        step=1,
+        key=risk_key,
+    )
+
+    risk_amount = (
+        capital * risk_percent / 100
+    )
+
+    # =====================================================
+    # DELTA FUTURES
+    # =====================================================
+
+    if is_delta:
+
+        entry_key = (
+            f"dashboard_entry_price_"
+            f"{safe_symbol_key}_DELTA"
+        )
+
+        stop_key = (
+            f"dashboard_stop_price_"
+            f"{safe_symbol_key}_DELTA"
+        )
+
+        target_key = (
+            f"dashboard_target_price_"
+            f"{safe_symbol_key}_DELTA"
+        )
+
+        quantity_key = (
+            f"dashboard_order_quantity_"
+            f"{safe_symbol_key}_DELTA"
+        )
+
+        default_entry = safe_float(
+            display_price,
+            0.0032,
+        )
+
+        if default_entry <= 0:
+            default_entry = 0.0032
+
+        default_stop = default_entry * 0.99
+
+        default_target = (
+            default_entry
+            + (default_entry - default_stop) * 2
+        )
+
+        entry = st.number_input(
+            "Entry Price",
+            min_value=0.0,
+            value=float(default_entry),
+            step=0.00000001,
+            format="%.8f",
+            key=entry_key,
+        )
+
+        stop = st.number_input(
+            "Stop Loss",
+            min_value=0.0,
+            value=float(default_stop),
+            step=0.00000001,
+            format="%.8f",
+            key=stop_key,
+        )
+
+        target = st.number_input(
+            "Target Price",
+            min_value=0.0,
+            value=float(default_target),
+            step=0.00000001,
+            format="%.8f",
+            key=target_key,
+        )
+
+        safe_default_quantity = max(
+            1,
+            int(
+                safe_float(
+                    default_quantity,
+                    1,
+                )
+            ),
+        )
+
+        order_quantity = st.number_input(
+            "Order Quantity",
+            min_value=1,
+            max_value=1000000,
+            value=safe_default_quantity,
+            step=1,
+            key=quantity_key,
+        )
+
+        risk_per_unit = abs(
+            entry - stop
+        )
+
+        reward_per_unit = (
+            abs(target - entry)
+            if entry > 0 and target > 0
+            else 0.0
+        )
+
+        mathematical_qty = (
+            int(risk_amount / risk_per_unit)
+            if risk_per_unit > 0
+            else 0
+        )
+
+        total_risk = (
+            risk_per_unit * order_quantity
+        )
+
+        total_reward = (
+            reward_per_unit * order_quantity
+        )
+
+        reward_risk_ratio = (
+            reward_per_unit / risk_per_unit
+            if risk_per_unit > 0
+            else 0.0
+        )
+
+        st.divider()
+
+        c1, c2, c3 = st.columns(3)
+
+        c1.metric(
+            "🛡 TOTAL RISK",
+            f"${total_risk:,.8f}",
+        )
+
+        c2.metric(
+            "🎯 TOTAL REWARD",
+            f"${total_reward:,.8f}",
+        )
+
+        c3.metric(
+            "⚖️ RISK / REWARD",
+            f"1 : {reward_risk_ratio:.2f}",
+        )
+
+        d1, d2, d3 = st.columns(3)
+
+        d1.metric(
+            "Risk Amount",
+            f"${risk_amount:,.8f}",
+        )
+
+        d2.metric(
+            "Risk / Unit",
+            f"${risk_per_unit:,.8f}",
+        )
+
+        d3.metric(
+            "Reward / Unit",
+            f"${reward_per_unit:,.8f}",
+        )
+
+        st.metric(
+            "📦 Order Quantity",
+            int(order_quantity),
+        )
+
+        st.caption(
+            f"Selected Symbol: {symbol_key}"
+        )
+
+        st.caption(
+            "Delta Futures quantity is contract-based. "
+            "Actual execution quantity remains controlled "
+            "by TradeManager."
+        )
+
+        if total_risk > risk_amount:
+            st.warning(
+                f"⚠️ Order risk ${total_risk:,.8f} "
+                f"is above risk budget "
+                f"${risk_amount:,.8f}."
+            )
+
+        if reward_risk_ratio >= 2:
+            st.success(
+                f"✅ Good Risk/Reward: "
+                f"1 : {reward_risk_ratio:.2f}"
+            )
+        elif reward_risk_ratio >= 1:
+            st.warning(
+                f"⚠️ Moderate Risk/Reward: "
+                f"1 : {reward_risk_ratio:.2f}"
+            )
+        else:
+            st.error(
+                f"🔴 Poor Risk/Reward: "
+                f"1 : {reward_risk_ratio:.2f}"
+            )
+
+        return {
+            "entry": entry,
+            "stop": stop,
+            "target": target,
+            "risk_percent": risk_percent,
+            "risk_amount": risk_amount,
+            "risk_per_unit": risk_per_unit,
+            "reward_per_unit": reward_per_unit,
+            "reward": total_reward,
+            "total_risk": total_risk,
+            "risk_reward_ratio": reward_risk_ratio,
+            "order_quantity": int(order_quantity),
+            "suggested_quantity": mathematical_qty,
+            "option_mode": "DELTA",
+        }
+
+    # =====================================================
+    # INDIAN OPTIONS
+    # =====================================================
+
+    st.info(
+        f"📊 Option Mode: {option_mode} | "
+        f"CE ₹{option_ce_ltp:,.2f} | "
+        f"PE ₹{option_pe_ltp:,.2f}"
+    )
+
+    safe_default_quantity = max(
+        1,
+        int(
+            safe_float(
+                default_quantity,
+                1,
+            )
+        ),
+    )
+
+    price_step = 0.05
+
+    # =====================================================
+    # INTERNAL OPTION CALCULATOR
+    # =====================================================
+
+    def calculate_option(
+        label,
+        ltp,
+        risk_budget,
+        quantity_key_suffix,
+        color_icon,
+    ):
+        ltp = safe_float(ltp)
+
+        default_entry = (
+            ltp
+            if ltp > 0
+            else safe_float(display_price, 100.0)
+        )
+
+        if default_entry <= 0:
+            default_entry = 100.0
+
+        # Default: 20% premium SL
+        default_stop = default_entry * 0.80
+
+        # Default: 2R target
+        default_target = (
+            default_entry
+            + (default_entry - default_stop) * 2
+        )
+
+        entry_key = (
+            f"dashboard_entry_price_"
+            f"{safe_symbol_key}_{quantity_key_suffix}"
+        )
+
+        stop_key = (
+            f"dashboard_stop_price_"
+            f"{safe_symbol_key}_{quantity_key_suffix}"
+        )
+
+        target_key = (
+            f"dashboard_target_price_"
+            f"{safe_symbol_key}_{quantity_key_suffix}"
+        )
+
+        quantity_key = (
+            f"dashboard_order_quantity_"
+            f"{safe_symbol_key}_{quantity_key_suffix}"
+        )
+
+        st.markdown(
+            f"### {color_icon} {label} Risk Management"
+        )
+
+        st.caption(
+            f"Current Kotak LTP: ₹{ltp:,.2f}"
+        )
+
+        entry = st.number_input(
+            f"{label} Entry Price",
+            min_value=0.0,
+            value=float(default_entry),
+            step=price_step,
+            format="%.2f",
+            key=entry_key,
+        )
+
+        stop = st.number_input(
+            f"{label} Stop Loss",
+            min_value=0.0,
+            value=float(default_stop),
+            step=price_step,
+            format="%.2f",
+            key=stop_key,
+        )
+
+        target = st.number_input(
+            f"{label} Target Price",
+            min_value=0.0,
+            value=float(default_target),
+            step=price_step,
+            format="%.2f",
+            key=target_key,
+        )
+
+        order_quantity = st.number_input(
+            f"{label} Order Quantity",
+            min_value=1,
+            max_value=1000000,
+            value=safe_default_quantity,
+            step=1,
+            key=quantity_key,
+        )
+
+        risk_per_unit = abs(
+            entry - stop
+        )
+
+        reward_per_unit = (
+            abs(target - entry)
+            if entry > 0 and target > 0
+            else 0.0
+        )
+
+        total_risk = (
+            risk_per_unit * order_quantity
+        )
+
+        total_reward = (
+            reward_per_unit * order_quantity
+        )
+
+        reward_risk_ratio = (
+            reward_per_unit / risk_per_unit
+            if risk_per_unit > 0
+            else 0.0
+        )
+
+        mathematical_qty = (
+            int(risk_budget / risk_per_unit)
+            if risk_per_unit > 0
+            else 0
+        )
+
+        return {
+            "entry": entry,
+            "stop": stop,
+            "target": target,
+            "quantity": int(order_quantity),
+            "risk_per_unit": risk_per_unit,
+            "reward_per_unit": reward_per_unit,
+            "total_risk": total_risk,
+            "total_reward": total_reward,
+            "risk_reward_ratio": reward_risk_ratio,
+            "suggested_quantity": mathematical_qty,
+            "risk_budget": risk_budget,
+            "ltp": ltp,
+        }
+
+    # =====================================================
+    # CE ONLY
+    # =====================================================
+
+    if option_mode == "CE":
+
+        st.success(
+            f"🟢 CE Risk Reference: "
+            f"₹{option_ce_ltp:,.2f}"
+        )
+
+        ce = calculate_option(
+            label="CE",
+            ltp=option_ce_ltp,
+            risk_budget=risk_amount,
+            quantity_key_suffix="CE",
+            color_icon="🟢",
+        )
+
+        st.divider()
+
+        c1, c2, c3 = st.columns(3)
+
+        c1.metric(
+            "🛡 TOTAL RISK",
+            f"₹{ce['total_risk']:,.2f}",
+        )
+
+        c2.metric(
+            "🎯 TOTAL REWARD",
+            f"₹{ce['total_reward']:,.2f}",
+        )
+
+        c3.metric(
+            "⚖️ RISK / REWARD",
+            f"1 : {ce['risk_reward_ratio']:.2f}",
+        )
+
+        d1, d2, d3 = st.columns(3)
+
+        d1.metric(
+            "Risk Amount",
+            f"₹{risk_amount:,.2f}",
+        )
+
+        d2.metric(
+            "Risk / Unit",
+            f"₹{ce['risk_per_unit']:,.2f}",
+        )
+
+        d3.metric(
+            "Reward / Unit",
+            f"₹{ce['reward_per_unit']:,.2f}",
+        )
+
+        st.metric(
+            "📦 Order Quantity",
+            ce["quantity"],
+        )
+
+        st.caption(
+            f"Selected Symbol: {symbol_key}"
+        )
+
+        st.caption(
+            "Option Mode: CE"
+        )
+
+        st.caption(
+            f"Mathematical Risk Quantity: "
+            f"{ce['suggested_quantity']:,}"
+        )
+
+        if ce["total_risk"] > risk_amount:
+            st.warning(
+                f"⚠️ Total risk ₹{ce['total_risk']:,.2f} "
+                f"is above risk budget "
+                f"₹{risk_amount:,.2f}."
+            )
+
+        if ce["risk_reward_ratio"] >= 2:
+            st.success(
+                f"✅ Good Risk/Reward: "
+                f"1 : {ce['risk_reward_ratio']:.2f}"
+            )
+        elif ce["risk_reward_ratio"] >= 1:
+            st.warning(
+                f"⚠️ Moderate Risk/Reward: "
+                f"1 : {ce['risk_reward_ratio']:.2f}"
+            )
+        else:
+            st.error(
+                f"🔴 Poor Risk/Reward: "
+                f"1 : {ce['risk_reward_ratio']:.2f}"
+            )
+
+        return {
+            "entry": ce["entry"],
+            "stop": ce["stop"],
+            "target": ce["target"],
+            "risk_percent": risk_percent,
+            "risk_amount": risk_amount,
+            "risk_per_unit": ce["risk_per_unit"],
+            "reward_per_unit": ce["reward_per_unit"],
+            "reward": ce["total_reward"],
+            "total_risk": ce["total_risk"],
+            "risk_reward_ratio": ce["risk_reward_ratio"],
+            "order_quantity": ce["quantity"],
+            "suggested_quantity": ce["suggested_quantity"],
+            "option_mode": "CE",
+            "option_ce_ltp": option_ce_ltp,
+            "option_pe_ltp": option_pe_ltp,
+        }
+
+    # =====================================================
+    # PE ONLY
+    # =====================================================
+
+    if option_mode == "PE":
+
+        st.error(
+            f"🔴 PE Risk Reference: "
+            f"₹{option_pe_ltp:,.2f}"
+        )
+
+        pe = calculate_option(
+            label="PE",
+            ltp=option_pe_ltp,
+            risk_budget=risk_amount,
+            quantity_key_suffix="PE",
+            color_icon="🔴",
+        )
+
+        st.divider()
+
+        c1, c2, c3 = st.columns(3)
+
+        c1.metric(
+            "🛡 TOTAL RISK",
+            f"₹{pe['total_risk']:,.2f}",
+        )
+
+        c2.metric(
+            "🎯 TOTAL REWARD",
+            f"₹{pe['total_reward']:,.2f}",
+        )
+
+        c3.metric(
+            "⚖️ RISK / REWARD",
+            f"1 : {pe['risk_reward_ratio']:.2f}",
+        )
+
+        d1, d2, d3 = st.columns(3)
+
+        d1.metric(
+            "Risk Amount",
+            f"₹{risk_amount:,.2f}",
+        )
+
+        d2.metric(
+            "Risk / Unit",
+            f"₹{pe['risk_per_unit']:,.2f}",
+        )
+
+        d3.metric(
+            "Reward / Unit",
+            f"₹{pe['reward_per_unit']:,.2f}",
+        )
+
+        st.metric(
+            "📦 Order Quantity",
+            pe["quantity"],
+        )
+
+        st.caption(
+            f"Selected Symbol: {symbol_key}"
+        )
+
+        st.caption(
+            "Option Mode: PE"
+        )
+
+        st.caption(
+            f"Mathematical Risk Quantity: "
+            f"{pe['suggested_quantity']:,}"
+        )
+
+        if pe["total_risk"] > risk_amount:
+            st.warning(
+                f"⚠️ Total risk ₹{pe['total_risk']:,.2f} "
+                f"is above risk budget "
+                f"₹{risk_amount:,.2f}."
+            )
+
+        if pe["risk_reward_ratio"] >= 2:
+            st.success(
+                f"✅ Good Risk/Reward: "
+                f"1 : {pe['risk_reward_ratio']:.2f}"
+            )
+        elif pe["risk_reward_ratio"] >= 1:
+            st.warning(
+                f"⚠️ Moderate Risk/Reward: "
+                f"1 : {pe['risk_reward_ratio']:.2f}"
+            )
+        else:
+            st.error(
+                f"🔴 Poor Risk/Reward: "
+                f"1 : {pe['risk_reward_ratio']:.2f}"
+            )
+
+        return {
+            "entry": pe["entry"],
+            "stop": pe["stop"],
+            "target": pe["target"],
+            "risk_percent": risk_percent,
+            "risk_amount": risk_amount,
+            "risk_per_unit": pe["risk_per_unit"],
+            "reward_per_unit": pe["reward_per_unit"],
+            "reward": pe["total_reward"],
+            "total_risk": pe["total_risk"],
+            "risk_reward_ratio": pe["risk_reward_ratio"],
+            "order_quantity": pe["quantity"],
+            "suggested_quantity": pe["suggested_quantity"],
+            "option_mode": "PE",
+            "option_ce_ltp": option_ce_ltp,
+            "option_pe_ltp": option_pe_ltp,
+        }
+
+    # =====================================================
+    # ALL = CE + PE
+    # =====================================================
+
+    st.warning(
+        "📊 ALL Mode: CE और PE दोनों के लिए "
+        "अलग-अलग risk management active है."
+    )
+
+    # Shared risk budget:
+    # CE = 50%, PE = 50%
+    ce_risk_budget = risk_amount / 2
+    pe_risk_budget = risk_amount / 2
+
+    ce = calculate_option(
+        label="CE",
+        ltp=option_ce_ltp,
+        risk_budget=ce_risk_budget,
+        quantity_key_suffix="ALL_CE",
+        color_icon="🟢",
+    )
+
+    st.divider()
+
+    pe = calculate_option(
+        label="PE",
+        ltp=option_pe_ltp,
+        risk_budget=pe_risk_budget,
+        quantity_key_suffix="ALL_PE",
+        color_icon="🔴",
+    )
+
+    # =====================================================
+    # CE / PE SUMMARY
+    # =====================================================
+
+    st.divider()
+
+    st.markdown("### 📊 CE + PE Risk Summary")
+
+    s1, s2, s3 = st.columns(3)
+
+    s1.metric(
+        "🟢 CE Risk",
+        f"₹{ce['total_risk']:,.2f}",
+    )
+
+    s2.metric(
+        "🔴 PE Risk",
+        f"₹{pe['total_risk']:,.2f}",
+    )
+
+    s3.metric(
+        "🛡 Combined Risk",
+        f"₹{ce['total_risk'] + pe['total_risk']:,.2f}",
+    )
+
+    s4, s5, s6 = st.columns(3)
+
+    s4.metric(
+        "🎯 CE Reward",
+        f"₹{ce['total_reward']:,.2f}",
+    )
+
+    s5.metric(
+        "🎯 PE Reward",
+        f"₹{pe['total_reward']:,.2f}",
+    )
+
+    combined_reward = (
+        ce["total_reward"]
+        + pe["total_reward"]
+    )
+
+    combined_risk = (
+        ce["total_risk"]
+        + pe["total_risk"]
+    )
+
+    s6.metric(
+        "🎯 Combined Reward",
+        f"₹{combined_reward:,.2f}",
+    )
+
+    combined_rr = (
+        combined_reward / combined_risk
+        if combined_risk > 0
+        else 0.0
+    )
+
+    st.metric(
+        "⚖️ COMBINED RISK / REWARD",
+        f"1 : {combined_rr:.2f}",
+    )
+
+    st.caption(
+        f"Total Risk Budget: ₹{risk_amount:,.2f} "
+        f"(CE ₹{ce_risk_budget:,.2f} + "
+        f"PE ₹{pe_risk_budget:,.2f})"
+    )
+
+    # =====================================================
+    # WARNINGS
+    # =====================================================
+
+    if combined_risk > risk_amount:
+        st.warning(
+            f"⚠️ Combined option risk "
+            f"₹{combined_risk:,.2f} "
+            f"is above total risk budget "
+            f"₹{risk_amount:,.2f}."
+        )
+    else:
+        st.success(
+            f"✅ Combined option risk "
+            f"₹{combined_risk:,.2f} "
+            f"is within risk budget "
+            f"₹{risk_amount:,.2f}."
+        )
+
+    # =====================================================
+    # CE / PE R:R STATUS
+    # =====================================================
+
+    r1, r2 = st.columns(2)
+
+    with r1:
+        if ce["risk_reward_ratio"] >= 2:
+            st.success(
+                f"🟢 CE R:R = "
+                f"1 : {ce['risk_reward_ratio']:.2f}"
+            )
+        elif ce["risk_reward_ratio"] >= 1:
+            st.warning(
+                f"🟡 CE R:R = "
+                f"1 : {ce['risk_reward_ratio']:.2f}"
+            )
+        else:
+            st.error(
+                f"🔴 CE R:R = "
+                f"1 : {ce['risk_reward_ratio']:.2f}"
+            )
+
+    with r2:
+        if pe["risk_reward_ratio"] >= 2:
+            st.success(
+                f"🟢 PE R:R = "
+                f"1 : {pe['risk_reward_ratio']:.2f}"
+            )
+        elif pe["risk_reward_ratio"] >= 1:
+            st.warning(
+                f"🟡 PE R:R = "
+                f"1 : {pe['risk_reward_ratio']:.2f}"
+            )
+        else:
+            st.error(
+                f"🔴 PE R:R = "
+                f"1 : {pe['risk_reward_ratio']:.2f}"
+            )
+
+    st.caption(
+        f"Selected Symbol: {symbol_key}"
+    )
+
+    st.caption(
+        "Option Mode: ALL"
+    )
+
+    st.caption(
+        f"CE Mathematical Risk Quantity: "
+        f"{ce['suggested_quantity']:,}"
+    )
+
+    st.caption(
+        f"PE Mathematical Risk Quantity: "
+        f"{pe['suggested_quantity']:,}"
+    )
+
+    st.caption(
+        "Indian option risk is calculated from "
+        "the selected CE/PE premium. "
+        "ALL mode uses a shared risk budget split "
+        "50% CE + 50% PE. "
+        "Order quantity follows lot size × lots."
+    )
+
+    # =====================================================
+    # COMPATIBILITY RETURN
+    # =====================================================
+
+    # Existing dashboard callers expect these top-level
+    # fields. CE is used as the primary compatibility side.
+    return {
+        "entry": ce["entry"],
+        "stop": ce["stop"],
+        "target": ce["target"],
+        "risk_percent": risk_percent,
+        "risk_amount": risk_amount,
+        "risk_per_unit": ce["risk_per_unit"],
+        "reward_per_unit": ce["reward_per_unit"],
+        "reward": combined_reward,
+        "total_risk": combined_risk,
+        "risk_reward_ratio": combined_rr,
+        "order_quantity": ce["quantity"],
+        "suggested_quantity": ce["suggested_quantity"],
+        "option_mode": "ALL",
+        "option_ce_ltp": option_ce_ltp,
+        "option_pe_ltp": option_pe_ltp,
+        "CE": ce,
+        "PE": pe,
+        "combined_risk": combined_risk,
+        "combined_reward": combined_reward,
+        "combined_risk_reward_ratio": combined_rr,
+    }
 # =========================================================
 # MAIN DASHBOARD PAGE
 # =========================================================

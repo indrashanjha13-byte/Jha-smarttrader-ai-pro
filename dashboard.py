@@ -6,6 +6,7 @@
 from pathlib import Path
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
+import inspect
 import logging
 
 import streamlit as st
@@ -30,7 +31,10 @@ from auto_mode import (
     disable_auto,
 )
 
-from option_chain import scan_all_option_chain
+from option_chain import (
+    scan_all_option_chain,
+    get_exact_option_prices,
+)
 
 from fo_symbols import (
     INDICES,
@@ -71,6 +75,13 @@ from option_contracts import (
 
 
 # ============================================================
+# KOTAK NEO OPTION RESOLVER
+# ============================================================
+
+from kotak_option_resolver import resolve_atm_option
+
+
+# ============================================================
 # STREAMLIT CONFIG
 # ============================================================
 
@@ -99,7 +110,6 @@ logging.basicConfig(
 st.markdown(
     """
     <style>
-
     .block-container {
         padding-top: 1rem;
     }
@@ -114,7 +124,6 @@ st.markdown(
     div[data-testid="stMetric"]:hover {
         border: 1px solid #00ff88;
     }
-
     </style>
     """,
     unsafe_allow_html=True,
@@ -122,55 +131,21 @@ st.markdown(
 
 
 # ============================================================
-# CACHED OPTION CHAIN
-# ============================================================
-
-@st.cache_data(
-    ttl=10,
-    show_spinner=False,
-)
-def get_cached_option_chain():
-
-    try:
-        return scan_all_option_chain()
-
-    except Exception as e:
-
-        logging.warning(
-            f"Option chain error: {e}"
-        )
-
-        return None
-
-
-# ============================================================
 # SAFE FLOAT
 # ============================================================
 
-def safe_float(
-    value,
-    default=0.0,
-):
-
+def safe_float(value, default=0.0):
     try:
-
         if value is None:
             return default
 
-        if isinstance(
-            value,
-            str,
-        ):
-
+        if isinstance(value, str):
             value = value.strip()
 
             if not value:
                 return default
 
-            value = value.replace(
-                ",",
-                "",
-            )
+            value = value.replace(",", "")
 
         result = float(value)
 
@@ -187,6 +162,64 @@ def safe_float(
 
     except Exception:
         return default
+
+
+# ============================================================
+# OPTION CHAIN CACHE
+# ============================================================
+
+@st.cache_data(ttl=10, show_spinner=False)
+def get_cached_option_chain():
+
+    try:
+        return scan_all_option_chain()
+
+    except Exception as e:
+        logging.warning(
+            f"Option chain error: {e}"
+        )
+        return None
+
+
+# ============================================================
+# EXACT OPTION PRICE CACHE
+# ============================================================
+
+@st.cache_data(ttl=10, show_spinner=False)
+def get_cached_exact_option_prices(
+    index_name,
+    strike,
+    expiry=None,
+    underlying_price=0.0,
+):
+    """
+    Get exact CE/PE option prices.
+
+    IMPORTANT:
+    underlying_price is passed to option_chain.py
+    so Kotak Neo can be used as the primary LTP source.
+    """
+
+    try:
+
+        underlying_price = safe_float(
+            underlying_price
+        )
+
+        return get_exact_option_prices(
+            index_name=index_name,
+            strike=strike,
+            expiry=expiry,
+            underlying_price=underlying_price,
+        )
+
+    except Exception as e:
+
+        logging.warning(
+            f"Exact option price error: {e}"
+        )
+
+        return None
 
 
 # ============================================================
@@ -220,21 +253,7 @@ def normalize_signal(value):
 
 def normalize_position_side(position):
 
-    """
-    Normalize BUY/SELL and LONG/SHORT into LONG/SHORT.
-
-    Indian Options:
-        BUY -> LONG
-
-    Delta Futures:
-        BUY -> LONG
-        SELL -> SHORT
-    """
-
-    if not isinstance(
-        position,
-        dict,
-    ):
+    if not isinstance(position, dict):
         return "LONG"
 
     raw_position_side = str(
@@ -270,7 +289,7 @@ def normalize_position_side(position):
 
 
 # ============================================================
-# DELTA MARKET DETECTION
+# DELTA SYMBOL DETECTION
 # ============================================================
 
 def is_delta_symbol(symbol):
@@ -318,13 +337,13 @@ def is_delta_symbol(symbol):
 
 
 # ============================================================
-# MARKET TIMING
+# MARKET STATUS
 # ============================================================
 
 def get_market_status(symbol):
 
     # --------------------------------------------------------
-    # DELTA EXCHANGE — OPEN 24x7
+    # DELTA = 24/7
     # --------------------------------------------------------
 
     if is_delta_symbol(symbol):
@@ -339,43 +358,45 @@ def get_market_status(symbol):
                 "🟢 Delta Exchange market is OPEN 24/7."
             ),
         }
+    # --------------------------------------------------------
+    # INDIA MARKET STATUS
+    # --------------------------------------------------------
+
+    ist = ZoneInfo("Asia/Kolkata")
+
+    now_dt = datetime.now(ist)
+    now = now_dt.time()
 
     # --------------------------------------------------------
-    # INDIAN MARKET — IST
+    # WEEKEND CHECK
+    # Saturday = 5
+    # Sunday   = 6
     # --------------------------------------------------------
 
-    ist = ZoneInfo(
-        "Asia/Kolkata"
-    )
+    if now_dt.weekday() >= 5:
 
-    now = datetime.now(
-        ist
-    ).time()
+        return {
+            "market": "INDIA",
+            "status": "MARKET_CLOSED",
+            "market_open": False,
+            "entry_allowed": False,
+            "manage_positions": True,
+            "message": "🔴 Indian Market CLOSED • Weekend.",
+        }
 
-    pre_market_start = time(
-        9,
-        0,
-    )
+    # --------------------------------------------------------
+    # MARKET TIMINGS
+    # --------------------------------------------------------
 
-    market_open = time(
-        9,
-        15,
-    )
-
-    market_close = time(
-        15,
-        30,
-    )
+    pre_market_start = time(9, 0)
+    market_open = time(9, 15)
+    market_close = time(15, 30)
 
     # --------------------------------------------------------
     # PRE-MARKET
     # --------------------------------------------------------
 
-    if (
-        pre_market_start
-        <= now
-        < market_open
-    ):
+    if pre_market_start <= now < market_open:
 
         return {
             "market": "INDIA",
@@ -383,21 +404,14 @@ def get_market_status(symbol):
             "market_open": False,
             "entry_allowed": False,
             "manage_positions": True,
-            "message": (
-                "🟡 Indian Market PRE-MARKET • "
-                "Opens 09:15 IST."
-            ),
-        }
+            "message": "🟡 Indian Market PRE-MARKET • Opens 09:15 IST.",
+         }
 
     # --------------------------------------------------------
     # MARKET OPEN
     # --------------------------------------------------------
 
-    if (
-        market_open
-        <= now
-        < market_close
-    ):
+    if market_open <= now < market_close:
 
         return {
             "market": "INDIA",
@@ -405,10 +419,7 @@ def get_market_status(symbol):
             "market_open": True,
             "entry_allowed": True,
             "manage_positions": True,
-            "message": (
-                "🟢 Indian Market OPEN • "
-                "09:15–15:30 IST."
-            ),
+            "message": "🟢 Indian Market OPEN • 09:15–15:30 IST.",
         }
 
     # --------------------------------------------------------
@@ -421,27 +432,18 @@ def get_market_status(symbol):
         "market_open": False,
         "entry_allowed": False,
         "manage_positions": True,
-        "message": (
-            "🔴 Indian Market CLOSED • "
-            "Session 09:15–15:30 IST."
-        ),
+        "message": "🔴 Indian Market CLOSED • Session 09:15–15:30 IST.",
     }
-
-
+    
 # ============================================================
 # OPTION SYMBOL MAP
 # ============================================================
 
 OPTION_SYMBOL_MAP = {
-
     "^NSEI": "NIFTY",
-
     "^NSEBANK": "BANKNIFTY",
-
     "^CNXFINANCE": "FINNIFTY",
-
     "^NSEMDCP50": "MIDCPNIFTY",
-
     "^BSESN": "SENSEX",
 }
 
@@ -451,13 +453,11 @@ OPTION_SYMBOL_MAP = {
 # ============================================================
 
 symbols = [
-
     "^NSEI",
     "^NSEBANK",
     "^CNXFINANCE",
     "^NSEMDCP50",
     "^BSESN",
-
     "RELIANCE.NS",
     "TCS.NS",
     "INFY.NS",
@@ -482,10 +482,7 @@ BASE_DIR = Path(
 # LOGO
 # ============================================================
 
-logo_path = (
-    BASE_DIR
-    / "logo.png"
-)
+logo_path = BASE_DIR / "logo.png"
 
 if logo_path.exists():
 
@@ -647,7 +644,6 @@ default_symbol = settings.get(
 )
 
 if default_symbol not in symbols:
-
     default_symbol = "^NSEI"
 
 
@@ -660,10 +656,6 @@ symbol = st.sidebar.selectbox(
 )
 
 
-# ============================================================
-# IMPORTANT SESSION STATE
-# ============================================================
-
 st.session_state[
     "selected_underlying_symbol"
 ] = symbol
@@ -674,7 +666,6 @@ st.session_state[
 # ============================================================
 
 strategies = [
-
     "EMA Crossover",
     "RSI",
     "SuperTrend",
@@ -689,7 +680,6 @@ default_strategy = settings.get(
 )
 
 if default_strategy not in strategies:
-
     default_strategy = "AI Combo"
 
 
@@ -749,7 +739,6 @@ is_option_index = (
 market_type = "INDEX"
 
 option_mode = "N/A"
-
 strike_mode = "ATM"
 
 selected_lots = 1
@@ -770,6 +759,21 @@ current_price = 0.0
 
 futures_symbol = None
 
+index_name = OPTION_SYMBOL_MAP.get(
+    symbol,
+    "",
+)
+
+exact_strike = 0.0
+exact_strike_from_api = 0.0
+
+expiry_from_api = None
+
+ce_ltp_exact = 0.0
+pe_ltp_exact = 0.0
+
+exact_option_data = None
+
 
 # ============================================================
 # MARKET TYPE
@@ -778,33 +782,25 @@ futures_symbol = None
 if is_option_index:
 
     market_type = st.sidebar.selectbox(
-
         "Market",
-
         [
             "OPTIONS",
             "FUTURES",
             "INDEX",
         ],
-
         index=0,
-
         key="index_market_type",
     )
 
 else:
 
     market_type = st.sidebar.selectbox(
-
         "Market",
-
         [
             "STOCK",
             "FUTURES",
         ],
-
         index=0,
-
         key="stock_market_type",
     )
 
@@ -848,20 +844,15 @@ if (
     )
 
     if default_option not in options:
-
         default_option = "ALL"
 
 
     option_mode = st.sidebar.selectbox(
-
         "Option Mode",
-
         options,
-
         index=options.index(
             default_option
         ),
-
         key="dashboard_option_mode",
     )
 
@@ -893,43 +884,28 @@ if (
     )
 
     if default_strike not in strike_modes:
-
         default_strike = "ATM"
 
 
     strike_mode = st.sidebar.selectbox(
-
         "Strike",
-
         strike_modes,
-
         index=strike_modes.index(
             default_strike
         ),
-
         key="dashboard_strike_mode",
     )
 
 
     selected_lots = st.sidebar.number_input(
-
         "Number of Lots",
-
         min_value=1,
-
         max_value=100,
-
         value=1,
-
         step=1,
-
         key="dashboard_lots",
     )
 
-
-    # ========================================================
-    # DYNAMIC ORDER QUANTITY
-    # ========================================================
 
     quantity = (
         int(selected_lots)
@@ -979,9 +955,7 @@ if market_type == "FUTURES":
                     futures_symbols.append(
                         str(
                             product_symbol
-                        )
-                        .strip()
-                        .upper()
+                        ).strip().upper()
                     )
 
 
@@ -1017,20 +991,15 @@ if market_type == "FUTURES":
     )
 
     if default_futures not in futures_symbols:
-
         default_futures = futures_symbols[0]
 
 
     futures_symbol = st.sidebar.selectbox(
-
         "Delta Futures",
-
         futures_symbols,
-
         index=futures_symbols.index(
             default_futures
         ),
-
         key="dashboard_futures_symbol",
     )
 
@@ -1041,13 +1010,9 @@ if market_type == "FUTURES":
 
 
     option_mode = "N/A"
-
     strike_mode = "N/A"
-
     selected_lots = 1
-
     LOT_SIZE = 1
-
     quantity = 1
 
 
@@ -1185,6 +1150,9 @@ live_auto_trading = st.sidebar.toggle(
 # MODE CONTROL
 # ============================================================
 
+live_confirm = False
+
+
 if live_auto_trading:
 
     try:
@@ -1238,7 +1206,415 @@ elif paper_trading:
 
 
 # ============================================================
-# DASHBOARD
+# HELPER:
+# KOTAK ATM CONTRACT
+# ============================================================
+
+def get_kotak_atm_contract(
+    index_name,
+    underlying_price,
+    option_type,
+    fallback_lot_size=1,
+):
+
+    try:
+
+        result = resolve_atm_option(
+            index_name,
+            underlying_price,
+            option_type,
+        )
+
+        if not isinstance(
+            result,
+            dict,
+        ):
+
+            logging.warning(
+                "Kotak resolver returned "
+                "non-dict result."
+            )
+
+            return None
+
+
+        contracts = result.get(
+            "contracts",
+            {},
+        )
+
+        if not isinstance(
+            contracts,
+            dict,
+        ):
+            contracts = {}
+
+
+        raw_contract = contracts.get(
+            option_type
+        )
+
+
+        if not isinstance(
+            raw_contract,
+            dict,
+        ):
+
+            raw_contract = result.get(
+                option_type
+            )
+
+
+        if not isinstance(
+            raw_contract,
+            dict,
+        ):
+
+            logging.warning(
+                f"Kotak {option_type} "
+                "contract missing."
+            )
+
+            return None
+
+
+        contract = dict(
+            raw_contract
+        )
+
+
+        kotak_expiry = (
+            contract.get(
+                "expiry"
+            )
+            or result.get(
+                "expiry"
+            )
+        )
+
+
+        kotak_exchange = (
+            contract.get(
+                "exchange_segment"
+            )
+            or result.get(
+                "exchange_segment"
+            )
+            or "nse_fo"
+        )
+
+
+        kotak_strike = safe_float(
+            contract.get(
+                "strike",
+                0,
+            )
+        )
+
+
+        if kotak_strike <= 0:
+
+            kotak_strike = safe_float(
+                result.get(
+                    "atm_strike",
+                    0,
+                )
+            )
+
+
+        kotak_lot_size = int(
+            safe_float(
+                contract.get(
+                    "lot_size",
+                    fallback_lot_size,
+                ),
+                fallback_lot_size,
+            )
+        )
+
+
+        if kotak_lot_size <= 0:
+
+            kotak_lot_size = int(
+                fallback_lot_size
+            )
+
+
+        kotak_symbol = str(
+            contract.get(
+                "trading_symbol",
+                contract.get(
+                    "pTrdSymbol",
+                    contract.get(
+                        "symbol",
+                        "",
+                    ),
+                ),
+            )
+            or ""
+        ).strip()
+
+
+        kotak_token = str(
+            contract.get(
+                "token",
+                contract.get(
+                    "pSymbol",
+                    "",
+                ),
+            )
+            or ""
+        ).strip()
+
+
+        kotak_instrument = str(
+            contract.get(
+                "instrument",
+                contract.get(
+                    "pInstType",
+                    "OPTIDX",
+                ),
+            )
+            or "OPTIDX"
+        ).strip()
+
+
+        kotak_option_type = str(
+            contract.get(
+                "option_type",
+                option_type,
+            )
+            or option_type
+        ).upper()
+
+
+        normalized = dict(
+            contract
+        )
+
+
+        normalized.update(
+            {
+                "index": index_name,
+
+                "underlying_price": safe_float(
+                    result.get(
+                        "underlying_price",
+                        underlying_price,
+                    )
+                ),
+
+                "option_type": kotak_option_type,
+
+                "strike": kotak_strike,
+
+                "expiry": kotak_expiry,
+
+                "lot_size": kotak_lot_size,
+
+                "trading_symbol": kotak_symbol,
+
+                "symbol": kotak_symbol,
+
+                "kotak_symbol": kotak_symbol,
+
+                "kotak_trading_symbol": kotak_symbol,
+
+                "kotak_token": kotak_token,
+
+                "exchange_segment": kotak_exchange,
+
+                "kotak_exchange_segment": kotak_exchange,
+
+                "instrument": kotak_instrument,
+
+                "kotak_instrument": kotak_instrument,
+
+                "source": "KOTAK_NEO",
+            }
+        )
+
+
+        if kotak_symbol:
+
+            normalized[
+                "display_symbol"
+            ] = kotak_symbol
+
+        else:
+
+            normalized[
+                "display_symbol"
+            ] = (
+                f"{index_name} "
+                f"{kotak_expiry or ''} "
+                f"{kotak_strike:g}"
+                f"{kotak_option_type}"
+            ).strip()
+
+
+        logging.info(
+            "KOTAK ATM CONTRACT | "
+            f"{index_name} | "
+            f"{kotak_option_type} | "
+            f"Strike={kotak_strike} | "
+            f"Expiry={kotak_expiry} | "
+            f"Symbol={kotak_symbol} | "
+            f"Token={kotak_token}"
+        )
+
+
+        return normalized
+
+
+    except Exception as e:
+
+        logging.exception(
+            f"Kotak {option_type} resolver error: {e}"
+        )
+
+        return None
+
+
+# ============================================================
+# HELPER:
+# TRADE MANAGER COMPATIBILITY
+# ============================================================
+
+def process_trade_compatible(
+    symbol,
+    signal,
+    current_price,
+    capital,
+    option_mode="N/A",
+    lots=1,
+    lot_size=1,
+    strike=None,
+    expiry=None,
+    option_type=None,
+    price_by_option=None,
+):
+
+    """
+    Calls TradeManager.process() using only arguments
+    supported by the currently installed TradeManager.
+
+    Compatible with older/newer TradeManager versions.
+    """
+
+    try:
+
+        process_method = (
+            trade_manager.process
+        )
+
+        # IMPORTANT:
+        # signature must exist before it is used.
+        signature = None
+        supported = set()
+
+        try:
+
+            signature = inspect.signature(
+                process_method
+            )
+
+            supported = set(
+                signature.parameters.keys()
+            )
+
+        except Exception as e:
+
+            logging.warning(
+                f"TradeManager signature inspect error: {e}"
+            )
+
+
+        kwargs = {
+            "symbol": symbol,
+            "signal": signal,
+            "current_price": current_price,
+            "capital": capital,
+            "option_mode": option_mode,
+            "lots": lots,
+            "lot_size": lot_size,
+            "strike": strike,
+            "expiry": expiry,
+            "option_type": option_type,
+            "price_by_option": price_by_option,
+        }
+
+
+        # ----------------------------------------------------
+        # **kwargs support
+        # ----------------------------------------------------
+
+        accepts_kwargs = False
+
+        if signature is not None:
+
+            try:
+
+                for parameter in (
+                    signature.parameters.values()
+                ):
+
+                    if (
+                        parameter.kind
+                        == inspect.Parameter.VAR_KEYWORD
+                    ):
+
+                        accepts_kwargs = True
+                        break
+
+            except Exception:
+                pass
+
+
+        if accepts_kwargs:
+
+            return process_method(
+                **kwargs
+            )
+
+
+        # ----------------------------------------------------
+        # Only supported parameters
+        # ----------------------------------------------------
+
+        filtered_kwargs = {}
+
+        for key, value in kwargs.items():
+
+            if (
+                key in supported
+                and value is not None
+            ):
+
+                filtered_kwargs[
+                    key
+                ] = value
+
+
+        return process_method(
+            **filtered_kwargs
+        )
+
+
+    except Exception as e:
+
+        logging.exception(
+            f"TradeManager process error: {e}"
+        )
+
+        return (
+            False,
+            str(e),
+        )
+
+
+# ============================================================
+# DASHBOARD PAGE
 # ============================================================
 
 if page == "🏠 Dashboard":
@@ -1327,7 +1703,10 @@ if page == "🏠 Dashboard":
             current_price = safe_float(
                 signal_data.get(
                     "Close",
-                    0,
+                    signal_data.get(
+                        "Price",
+                        0,
+                    ),
                 )
             )
 
@@ -1340,13 +1719,27 @@ if page == "🏠 Dashboard":
 
 
     # ========================================================
-    # OPTION CONTRACT
+    # RESET OPTION DATA
     # ========================================================
 
     option_contract = None
-
     option_contract_by_option = {}
+    price_by_option = {}
 
+    exact_strike = 0.0
+    exact_strike_from_api = 0.0
+
+    expiry_from_api = None
+
+    ce_ltp_exact = 0.0
+    pe_ltp_exact = 0.0
+
+    exact_option_data = None
+
+
+    # ========================================================
+    # OPTION CONTRACT RESOLUTION
+    # ========================================================
 
     if (
         market_type == "OPTIONS"
@@ -1359,83 +1752,121 @@ if page == "🏠 Dashboard":
         ]
 
 
-        # ----------------------------------------------------
-        # CE
-        # ----------------------------------------------------
+        # ====================================================
+        # RESOLVE CE
+        # ====================================================
 
         if option_mode in [
             "CE",
             "ALL",
         ]:
 
-            try:
+            ce_contract = None
 
-                ce_contract = resolve_option_contract(
 
-                    index_name=index_name,
+            if strike_mode == "ATM":
 
-                    underlying_price=underlying_price,
-
-                    option_type="CE",
-
-                    strike_mode=strike_mode,
-
+                ce_contract = (
+                    get_kotak_atm_contract(
+                        index_name=index_name,
+                        underlying_price=underlying_price,
+                        option_type="CE",
+                        fallback_lot_size=LOT_SIZE,
+                    )
                 )
 
-            except Exception as e:
 
-                logging.warning(
-                    f"CE contract error: {e}"
-                )
+            if ce_contract is None:
 
-                ce_contract = None
+                try:
+
+                    ce_contract = (
+                        resolve_option_contract(
+                            index_name=index_name,
+                            underlying_price=underlying_price,
+                            option_type="CE",
+                            strike_mode=strike_mode,
+                        )
+                    )
+
+                except Exception as e:
+
+                    logging.warning(
+                        f"CE contract error: {e}"
+                    )
+
+                    ce_contract = None
 
 
-            if ce_contract:
+            if isinstance(
+                ce_contract,
+                dict,
+            ):
 
                 option_contract_by_option[
                     "CE"
                 ] = ce_contract
 
 
-        # ----------------------------------------------------
-        # PE
-        # ----------------------------------------------------
+        # ====================================================
+        # RESOLVE PE
+        # ====================================================
 
         if option_mode in [
             "PE",
             "ALL",
         ]:
 
-            try:
+            pe_contract = None
 
-                pe_contract = resolve_option_contract(
 
-                    index_name=index_name,
+            if strike_mode == "ATM":
 
-                    underlying_price=underlying_price,
-
-                    option_type="PE",
-
-                    strike_mode=strike_mode,
-
+                pe_contract = (
+                    get_kotak_atm_contract(
+                        index_name=index_name,
+                        underlying_price=underlying_price,
+                        option_type="PE",
+                        fallback_lot_size=LOT_SIZE,
+                    )
                 )
 
-            except Exception as e:
 
-                logging.warning(
-                    f"PE contract error: {e}"
-                )
+            if pe_contract is None:
 
-                pe_contract = None
+                try:
+
+                    pe_contract = (
+                        resolve_option_contract(
+                            index_name=index_name,
+                            underlying_price=underlying_price,
+                            option_type="PE",
+                            strike_mode=strike_mode,
+                        )
+                    )
+
+                except Exception as e:
+
+                    logging.warning(
+                        f"PE contract error: {e}"
+                    )
+
+                    pe_contract = None
 
 
-            if pe_contract:
+            if isinstance(
+                pe_contract,
+                dict,
+            ):
 
                 option_contract_by_option[
                     "PE"
                 ] = pe_contract
 
+
+        # ====================================================
+        # SELECTED CONTRACT
+        # ====================================================
 
         if option_mode in [
             "CE",
@@ -1449,9 +1880,349 @@ if page == "🏠 Dashboard":
             )
 
 
-        # ----------------------------------------------------
-        # OPTION CONTRACT DISPLAY
-        # ----------------------------------------------------
+        # ====================================================
+        # FIND STRIKE
+        # ====================================================
+
+        if option_contract:
+
+            exact_strike = safe_float(
+                option_contract.get(
+                    "strike",
+                    0,
+                )
+            )
+
+        else:
+
+            ce = option_contract_by_option.get(
+                "CE"
+            )
+
+            pe = option_contract_by_option.get(
+                "PE"
+            )
+
+            if ce:
+
+                exact_strike = safe_float(
+                    ce.get(
+                        "strike",
+                        0,
+                    )
+                )
+
+            elif pe:
+
+                exact_strike = safe_float(
+                    pe.get(
+                        "strike",
+                        0,
+                    )
+                )
+
+
+        # ====================================================
+        # FIND EXPIRY
+        # ====================================================
+
+        kotak_expiry = None
+
+        if option_contract:
+
+            kotak_expiry = (
+                option_contract.get(
+                    "expiry"
+                )
+            )
+
+        else:
+
+            ce = option_contract_by_option.get(
+                "CE"
+            )
+
+            pe = option_contract_by_option.get(
+                "PE"
+            )
+
+            if ce:
+
+                kotak_expiry = ce.get(
+                    "expiry"
+                )
+
+            elif pe:
+
+                kotak_expiry = pe.get(
+                    "expiry"
+                )
+
+
+        # ====================================================
+        # EXACT OPTION LTP
+        #
+        # IMPORTANT:
+        # underlying_price is REQUIRED here so that
+        # option_chain.py uses Kotak Neo.
+        # ====================================================
+
+        if (
+            exact_strike > 0
+            and index_name
+        ):
+
+            try:
+
+                exact_option_data = (
+                    get_cached_exact_option_prices(
+                        index_name=index_name,
+                        strike=exact_strike,
+                        expiry=kotak_expiry,
+                        underlying_price=underlying_price,
+                    )
+                )
+
+
+                # ------------------------------------------------
+                # FALLBACK WITHOUT EXPIRY
+                #
+                # IMPORTANT:
+                # underlying_price must still be passed.
+                # ------------------------------------------------
+
+                if not isinstance(
+                    exact_option_data,
+                    dict,
+                ):
+
+                    exact_option_data = (
+                        get_cached_exact_option_prices(
+                            index_name=index_name,
+                            strike=exact_strike,
+                            expiry=None,
+                            underlying_price=underlying_price,
+                        )
+                    )
+
+
+                logging.info(
+                    "EXACT OPTION RESULT | "
+                    f"Index={index_name} | "
+                    f"Underlying={underlying_price} | "
+                    f"Strike={exact_strike} | "
+                    f"Expiry={kotak_expiry} | "
+                    f"Data={exact_option_data}"
+                )
+
+
+            except Exception as e:
+
+                logging.exception(
+                    "Exact option LTP error"
+                )
+
+                exact_option_data = None
+
+
+        # ====================================================
+        # READ OPTION PRICE
+        # ====================================================
+
+        if isinstance(
+            exact_option_data,
+            dict,
+        ):
+
+            exact_strike_from_api = safe_float(
+                exact_option_data.get(
+                    "strike",
+                    exact_strike,
+                )
+            )
+
+
+            if exact_strike_from_api <= 0:
+
+                exact_strike_from_api = (
+                    exact_strike
+                )
+
+
+            expiry_from_api = (
+                exact_option_data.get(
+                    "expiry",
+                    kotak_expiry,
+                )
+            )
+
+
+            ce_ltp_exact = safe_float(
+                exact_option_data.get(
+                    "CE",
+                    0,
+                )
+            )
+
+
+            pe_ltp_exact = safe_float(
+                exact_option_data.get(
+                    "PE",
+                    0,
+                )
+            )
+
+
+            if ce_ltp_exact > 0:
+
+                price_by_option[
+                    "CE"
+                ] = ce_ltp_exact
+
+
+            if pe_ltp_exact > 0:
+
+                price_by_option[
+                    "PE"
+                ] = pe_ltp_exact
+
+
+            # =================================================
+            # UPDATE CE
+            # =================================================
+
+            if "CE" in option_contract_by_option:
+
+                ce_contract = (
+                    option_contract_by_option[
+                        "CE"
+                    ]
+                )
+
+                ce_contract[
+                    "strike"
+                ] = exact_strike_from_api
+
+
+                if (
+                    not ce_contract.get(
+                        "expiry"
+                    )
+                    and expiry_from_api
+                ):
+
+                    ce_contract[
+                        "expiry"
+                    ] = expiry_from_api
+
+
+                ce_contract[
+                    "ltp"
+                ] = ce_ltp_exact
+
+
+            # =================================================
+            # UPDATE PE
+            # =================================================
+
+            if "PE" in option_contract_by_option:
+
+                pe_contract = (
+                    option_contract_by_option[
+                        "PE"
+                    ]
+                )
+
+                pe_contract[
+                    "strike"
+                ] = exact_strike_from_api
+
+
+                if (
+                    not pe_contract.get(
+                        "expiry"
+                    )
+                    and expiry_from_api
+                ):
+
+                    pe_contract[
+                        "expiry"
+                    ] = expiry_from_api
+
+
+                pe_contract[
+                    "ltp"
+                ] = pe_ltp_exact
+
+
+            # =================================================
+            # SELECTED CONTRACT UPDATE
+            # =================================================
+
+            if option_mode in [
+                "CE",
+                "PE",
+            ]:
+
+                option_contract = (
+                    option_contract_by_option.get(
+                        option_mode
+                    )
+                )
+
+
+        else:
+
+            logging.warning(
+                "Exact option data unavailable | "
+                f"Index={index_name} | "
+                f"Underlying={underlying_price} | "
+                f"Strike={exact_strike}"
+            )
+
+
+    # ========================================================
+    # SAVE OPTION DATA
+    # ========================================================
+
+    st.session_state[
+        "option_prices"
+    ] = price_by_option
+
+
+    st.session_state[
+        "option_contracts"
+    ] = option_contract_by_option
+
+
+    st.session_state[
+        "kotak_option_contracts"
+    ] = option_contract_by_option
+
+
+    st.session_state[
+        "option_index"
+    ] = index_name
+
+
+    st.session_state[
+        "option_mode"
+    ] = option_mode
+
+
+    st.session_state[
+        "option_strike_mode"
+    ] = strike_mode
+
+
+    # ========================================================
+    # OPTION CONTRACT DISPLAY
+    # ========================================================
+
+    if (
+        market_type == "OPTIONS"
+        and is_option_index
+    ):
 
         st.sidebar.divider()
 
@@ -1460,14 +2231,22 @@ if page == "🏠 Dashboard":
         )
 
 
+        # ====================================================
+        # ALL
+        # ====================================================
+
         if option_mode == "ALL":
 
-            ce = option_contract_by_option.get(
-                "CE"
+            ce = (
+                option_contract_by_option.get(
+                    "CE"
+                )
             )
 
-            pe = option_contract_by_option.get(
-                "PE"
+            pe = (
+                option_contract_by_option.get(
+                    "PE"
+                )
             )
 
 
@@ -1478,11 +2257,43 @@ if page == "🏠 Dashboard":
                 )
 
                 st.sidebar.caption(
-                    f"Strike: {ce.get('strike')}"
+                    f"Strike: "
+                    f"{ce.get('strike', 'N/A')}"
                 )
 
                 st.sidebar.caption(
-                    f"Symbol: {ce.get('symbol', 'N/A')}"
+                    f"Expiry: "
+                    f"{ce.get('expiry', 'N/A')}"
+                )
+
+                st.sidebar.caption(
+                    f"LTP: ₹"
+                    f"{safe_float(ce.get('ltp', 0)):,.2f}"
+                )
+
+                st.sidebar.caption(
+                    "Kotak Symbol: "
+                    f"{ce.get('kotak_trading_symbol', 'N/A')}"
+                )
+
+                st.sidebar.caption(
+                    "Kotak Token: "
+                    f"{ce.get('kotak_token', 'N/A')}"
+                )
+
+                st.sidebar.caption(
+                    "Segment: "
+                    f"{ce.get('kotak_exchange_segment', 'nse_fo')}"
+                )
+
+                st.sidebar.caption(
+                    "Instrument: "
+                    f"{ce.get('kotak_instrument', 'OPTIDX')}"
+                )
+
+                st.sidebar.caption(
+                    f"Lot Size: "
+                    f"{ce.get('lot_size', LOT_SIZE)}"
                 )
 
             else:
@@ -1499,11 +2310,43 @@ if page == "🏠 Dashboard":
                 )
 
                 st.sidebar.caption(
-                    f"Strike: {pe.get('strike')}"
+                    f"Strike: "
+                    f"{pe.get('strike', 'N/A')}"
                 )
 
                 st.sidebar.caption(
-                    f"Symbol: {pe.get('symbol', 'N/A')}"
+                    f"Expiry: "
+                    f"{pe.get('expiry', 'N/A')}"
+                )
+
+                st.sidebar.caption(
+                    f"LTP: ₹"
+                    f"{safe_float(pe.get('ltp', 0)):,.2f}"
+                )
+
+                st.sidebar.caption(
+                    "Kotak Symbol: "
+                    f"{pe.get('kotak_trading_symbol', 'N/A')}"
+                )
+
+                st.sidebar.caption(
+                    "Kotak Token: "
+                    f"{pe.get('kotak_token', 'N/A')}"
+                )
+
+                st.sidebar.caption(
+                    "Segment: "
+                    f"{pe.get('kotak_exchange_segment', 'nse_fo')}"
+                )
+
+                st.sidebar.caption(
+                    "Instrument: "
+                    f"{pe.get('kotak_instrument', 'OPTIDX')}"
+                )
+
+                st.sidebar.caption(
+                    f"Lot Size: "
+                    f"{pe.get('lot_size', LOT_SIZE)}"
                 )
 
             else:
@@ -1513,6 +2356,10 @@ if page == "🏠 Dashboard":
                 )
 
 
+        # ====================================================
+        # CE / PE
+        # ====================================================
+
         elif option_contract:
 
             st.sidebar.success(
@@ -1520,118 +2367,59 @@ if page == "🏠 Dashboard":
             )
 
             st.sidebar.caption(
-                f"Type: {option_contract.get('option_type')}"
+                f"Type: "
+                f"{option_contract.get('option_type', option_mode)}"
             )
 
             st.sidebar.caption(
-                f"Strike: {option_contract.get('strike')}"
+                f"Strike: "
+                f"{option_contract.get('strike', 'N/A')}"
             )
 
             st.sidebar.caption(
-                f"Mode: {option_contract.get('strike_mode')}"
+                f"Expiry: "
+                f"{option_contract.get('expiry', 'N/A')}"
             )
 
             st.sidebar.caption(
-                f"Symbol: {option_contract.get('symbol', 'N/A')}"
+                f"Mode: "
+                f"{strike_mode}"
+            )
+
+            st.sidebar.caption(
+                f"LTP: ₹"
+                f"{safe_float(option_contract.get('ltp', 0)):,.2f}"
+            )
+
+            st.sidebar.caption(
+                "Kotak Symbol: "
+                f"{option_contract.get('kotak_trading_symbol', 'N/A')}"
+            )
+
+            st.sidebar.caption(
+                "Kotak Token: "
+                f"{option_contract.get('kotak_token', 'N/A')}"
+            )
+
+            st.sidebar.caption(
+                "Exchange Segment: "
+                f"{option_contract.get('kotak_exchange_segment', 'nse_fo')}"
+            )
+
+            st.sidebar.caption(
+                "Instrument: "
+                f"{option_contract.get('kotak_instrument', 'OPTIDX')}"
+            )
+
+        else:
+
+            st.sidebar.warning(
+                "⚠️ Option contract unavailable."
             )
 
 
     # ========================================================
-    # OPTION PRICES
-    # ========================================================
-
-    price_by_option = {}
-
-
-    if market_type == "OPTIONS":
-
-        option_scan = get_cached_option_chain()
-
-
-        if isinstance(
-            option_scan,
-            dict,
-        ):
-
-            selected_index = (
-                OPTION_SYMBOL_MAP.get(
-                    symbol
-                )
-            )
-
-
-            selected_data = (
-                option_scan.get(
-                    selected_index
-                )
-            )
-
-
-            if isinstance(
-                selected_data,
-                dict,
-            ):
-
-                # --------------------------------------------
-                # CE
-                # --------------------------------------------
-
-                for key in [
-                    "CE",
-                    "ce",
-                    "CE_LTP",
-                    "ce_ltp",
-                    "call_ltp",
-                    "call_price",
-                ]:
-
-                    value = safe_float(
-                        selected_data.get(
-                            key,
-                            0,
-                        )
-                    )
-
-                    if value > 0:
-
-                        price_by_option[
-                            "CE"
-                        ] = value
-
-                        break
-
-
-                # --------------------------------------------
-                # PE
-                # --------------------------------------------
-
-                for key in [
-                    "PE",
-                    "pe",
-                    "PE_LTP",
-                    "pe_ltp",
-                    "put_ltp",
-                    "put_price",
-                ]:
-
-                    value = safe_float(
-                        selected_data.get(
-                            key,
-                            0,
-                        )
-                    )
-
-                    if value > 0:
-
-                        price_by_option[
-                            "PE"
-                        ] = value
-
-                        break
-
-
-    # ========================================================
-    # OPTION PRICE DISPLAY
+    # EXACT OPTION PRICE DISPLAY
     # ========================================================
 
     ce_ltp = safe_float(
@@ -1649,48 +2437,52 @@ if page == "🏠 Dashboard":
     )
 
 
-    if market_type == "OPTIONS":
+    if (
+        market_type == "OPTIONS"
+        and is_option_index
+    ):
 
         st.sidebar.divider()
 
         st.sidebar.subheader(
-            "💰 Option LTP"
+            "💰 Exact Option LTP"
         )
 
 
-        if ce_ltp > 0:
+        if option_mode in [
+            "CE",
+            "ALL",
+        ]:
 
-            st.sidebar.success(
-                f"🟢 CE LTP : ₹{ce_ltp:,.2f}"
-            )
+            if ce_ltp > 0:
 
-        else:
+                st.sidebar.success(
+                    f"🟢 CE LTP : ₹{ce_ltp:,.2f}"
+                )
 
-            st.sidebar.warning(
-                "⚠️ CE LTP unavailable"
-            )
+            else:
 
-
-        if pe_ltp > 0:
-
-            st.sidebar.success(
-                f"🔴 PE LTP : ₹{pe_ltp:,.2f}"
-            )
-
-        else:
-
-            st.sidebar.warning(
-                "⚠️ PE LTP unavailable"
-            )
+                st.sidebar.warning(
+                    "⚠️ CE exact LTP unavailable"
+                )
 
 
-        st.session_state[
-            "option_prices"
-        ] = price_by_option
+        if option_mode in [
+            "PE",
+            "ALL",
+        ]:
 
-        st.session_state[
-            "option_contracts"
-        ] = option_contract_by_option
+            if pe_ltp > 0:
+
+                st.sidebar.success(
+                    f"🔴 PE LTP : ₹{pe_ltp:,.2f}"
+                )
+
+            else:
+
+                st.sidebar.warning(
+                    "⚠️ PE exact LTP unavailable"
+                )
 
 
     # ========================================================
@@ -1698,13 +2490,9 @@ if page == "🏠 Dashboard":
     # ========================================================
 
     raw_signal = signal_data.get(
-
         "SIGNAL",
-
         signal_data.get(
-
             "Signal",
-
             signal_data.get(
                 "signal",
                 "HOLD",
@@ -1723,15 +2511,10 @@ if page == "🏠 Dashboard":
     # ========================================================
 
     signal_strength = safe_float(
-
         signal_data.get(
-
             "Signal_Strength",
-
             signal_data.get(
-
                 "Strength",
-
                 signal_data.get(
                     "Confidence",
                     0,
@@ -1763,7 +2546,7 @@ if page == "🏠 Dashboard":
 
 
     # ========================================================
-    # MARKET STATUS
+    # MARKET STATUS FOR TRADE
     # ========================================================
 
     trade_market_status = get_market_status(
@@ -1782,10 +2565,6 @@ if page == "🏠 Dashboard":
     ):
 
         try:
-
-            # ------------------------------------------------
-            # OPTIONS ALL
-            # ------------------------------------------------
 
             if (
                 market_type == "OPTIONS"
@@ -1810,10 +2589,6 @@ if page == "🏠 Dashboard":
                     )
 
 
-            # ------------------------------------------------
-            # OPTIONS CE / PE
-            # ------------------------------------------------
-
             elif (
                 market_type == "OPTIONS"
                 and option_mode in [
@@ -1829,7 +2604,6 @@ if page == "🏠 Dashboard":
                     )
                 )
 
-
                 if option_price > 0:
 
                     trade_manager.check_position(
@@ -1838,10 +2612,6 @@ if page == "🏠 Dashboard":
                         option_mode=option_mode,
                     )
 
-
-            # ------------------------------------------------
-            # INDEX / STOCK / FUTURES
-            # ------------------------------------------------
 
             else:
 
@@ -1992,6 +2762,7 @@ if page == "🏠 Dashboard":
                     "Indian market is closed/pre-market."
                 )
 
+
             # =================================================
             # OPTIONS ALL
             # =================================================
@@ -2016,23 +2787,46 @@ if page == "🏠 Dashboard":
                 )
 
 
-                # ------------------------------------------------
+                # =================================================
                 # BUY CE + PE
-                # ------------------------------------------------
+                # =================================================
 
                 if signal == "BUY":
 
-                    # --------------------------------------------
-                    # CE BUY
-                    # --------------------------------------------
+                    # ------------------------------------------------
+                    # CE
+                    # ------------------------------------------------
 
                     if ce_price > 0:
 
+                        ce_contract = (
+                            option_contract_by_option.get(
+                                "CE",
+                                {},
+                            )
+                        )
+
+                        ce_strike = safe_float(
+                            ce_contract.get(
+                                "strike",
+                                0,
+                            )
+                        )
+
+                        ce_expiry = (
+                            ce_contract.get(
+                                "expiry"
+                            )
+                        )
+
+
                         try:
 
-                            ce_position = trader.get_position(
-                                trade_symbol,
-                                "CE",
+                            ce_position = (
+                                trader.get_position(
+                                    trade_symbol,
+                                    "CE",
+                                )
                             )
 
                         except Exception:
@@ -2049,31 +2843,38 @@ if page == "🏠 Dashboard":
 
                         else:
 
-                            ce_success, ce_result = (
-                                trade_manager.process(
+                            (
+                                ce_success,
+                                ce_result,
+                            ) = process_trade_compatible(
 
-                                    symbol=trade_symbol,
+                                symbol=trade_symbol,
 
-                                    signal="BUY",
+                                signal="BUY",
 
-                                    current_price=ce_price,
+                                current_price=ce_price,
 
-                                    capital=trader.balance,
+                                capital=trader.balance,
 
-                                    option_mode="CE",
+                                option_mode="CE",
 
-                                    lots=int(
-                                        selected_lots
-                                    ),
+                                lots=int(
+                                    selected_lots
+                                ),
 
-                                    lot_size=int(
-                                        LOT_SIZE
-                                    ),
+                                lot_size=int(
+                                    LOT_SIZE
+                                ),
 
-                                    price_by_option={
-                                        "CE": ce_price
-                                    },
-                                )
+                                strike=ce_strike,
+
+                                expiry=ce_expiry,
+
+                                option_type="CE",
+
+                                price_by_option={
+                                    "CE": ce_price
+                                },
                             )
 
 
@@ -2081,7 +2882,10 @@ if page == "🏠 Dashboard":
 
                                 st.success(
                                     "🟢 AUTO PAPER ALL → "
-                                    "CE BUY: "
+                                    "CE BUY | "
+                                    f"Strike {ce_strike:g} | "
+                                    f"LTP ₹{ce_price:,.2f} | "
+                                    f"Expiry {ce_expiry} | "
                                     + str(
                                         ce_result
                                     )
@@ -2090,8 +2894,7 @@ if page == "🏠 Dashboard":
                             else:
 
                                 st.info(
-                                    "ℹ️ AUTO PAPER ALL → "
-                                    "CE: "
+                                    "ℹ️ AUTO PAPER ALL → CE: "
                                     + str(
                                         ce_result
                                     )
@@ -2101,21 +2904,44 @@ if page == "🏠 Dashboard":
 
                         st.warning(
                             "⛔ AUTO PAPER ALL: "
-                            "CE LTP unavailable."
+                            "CE exact LTP unavailable."
                         )
 
 
-                    # --------------------------------------------
-                    # PE BUY
-                    # --------------------------------------------
+                    # ------------------------------------------------
+                    # PE
+                    # ------------------------------------------------
 
                     if pe_price > 0:
 
+                        pe_contract = (
+                            option_contract_by_option.get(
+                                "PE",
+                                {},
+                            )
+                        )
+
+                        pe_strike = safe_float(
+                            pe_contract.get(
+                                "strike",
+                                0,
+                            )
+                        )
+
+                        pe_expiry = (
+                            pe_contract.get(
+                                "expiry"
+                            )
+                        )
+
+
                         try:
 
-                            pe_position = trader.get_position(
-                                trade_symbol,
-                                "PE",
+                            pe_position = (
+                                trader.get_position(
+                                    trade_symbol,
+                                    "PE",
+                                )
                             )
 
                         except Exception:
@@ -2132,31 +2958,38 @@ if page == "🏠 Dashboard":
 
                         else:
 
-                            pe_success, pe_result = (
-                                trade_manager.process(
+                            (
+                                pe_success,
+                                pe_result,
+                            ) = process_trade_compatible(
 
-                                    symbol=trade_symbol,
+                                symbol=trade_symbol,
 
-                                    signal="BUY",
+                                signal="BUY",
 
-                                    current_price=pe_price,
+                                current_price=pe_price,
 
-                                    capital=trader.balance,
+                                capital=trader.balance,
 
-                                    option_mode="PE",
+                                option_mode="PE",
 
-                                    lots=int(
-                                        selected_lots
-                                    ),
+                                lots=int(
+                                    selected_lots
+                                ),
 
-                                    lot_size=int(
-                                        LOT_SIZE
-                                    ),
+                                lot_size=int(
+                                    LOT_SIZE
+                                ),
 
-                                    price_by_option={
-                                        "PE": pe_price
-                                    },
-                                )
+                                strike=pe_strike,
+
+                                expiry=pe_expiry,
+
+                                option_type="PE",
+
+                                price_by_option={
+                                    "PE": pe_price
+                                },
                             )
 
 
@@ -2164,7 +2997,10 @@ if page == "🏠 Dashboard":
 
                                 st.success(
                                     "🔴 AUTO PAPER ALL → "
-                                    "PE BUY: "
+                                    "PE BUY | "
+                                    f"Strike {pe_strike:g} | "
+                                    f"LTP ₹{pe_price:,.2f} | "
+                                    f"Expiry {pe_expiry} | "
                                     + str(
                                         pe_result
                                     )
@@ -2173,8 +3009,7 @@ if page == "🏠 Dashboard":
                             else:
 
                                 st.info(
-                                    "ℹ️ AUTO PAPER ALL → "
-                                    "PE: "
+                                    "ℹ️ AUTO PAPER ALL → PE: "
                                     + str(
                                         pe_result
                                     )
@@ -2184,27 +3019,29 @@ if page == "🏠 Dashboard":
 
                         st.warning(
                             "⛔ AUTO PAPER ALL: "
-                            "PE LTP unavailable."
+                            "PE exact LTP unavailable."
                         )
 
 
-                # ------------------------------------------------
+                # =================================================
                 # SELL = EXIT ONLY
-                # ------------------------------------------------
+                # =================================================
 
                 elif signal == "SELL":
 
-                    # --------------------------------------------
+                    # ------------------------------------------------
                     # CE EXIT
-                    # --------------------------------------------
+                    # ------------------------------------------------
 
                     if ce_price > 0:
 
                         try:
 
-                            ce_position = trader.get_position(
-                                trade_symbol,
-                                "CE",
+                            ce_position = (
+                                trader.get_position(
+                                    trade_symbol,
+                                    "CE",
+                                )
                             )
 
                         except Exception:
@@ -2212,33 +3049,61 @@ if page == "🏠 Dashboard":
                             ce_position = None
 
 
+                        ce_contract = (
+                            option_contract_by_option.get(
+                                "CE",
+                                {},
+                            )
+                        )
+
+                        ce_strike = safe_float(
+                            ce_contract.get(
+                                "strike",
+                                0,
+                            )
+                        )
+
+                        ce_expiry = (
+                            ce_contract.get(
+                                "expiry"
+                            )
+                        )
+
+
                         if ce_position:
 
-                            ce_success, ce_result = (
-                                trade_manager.process(
+                            (
+                                ce_success,
+                                ce_result,
+                            ) = process_trade_compatible(
 
-                                    symbol=trade_symbol,
+                                symbol=trade_symbol,
 
-                                    signal="SELL",
+                                signal="SELL",
 
-                                    current_price=ce_price,
+                                current_price=ce_price,
 
-                                    capital=trader.balance,
+                                capital=trader.balance,
 
-                                    option_mode="CE",
+                                option_mode="CE",
 
-                                    lots=int(
-                                        selected_lots
-                                    ),
+                                lots=int(
+                                    selected_lots
+                                ),
 
-                                    lot_size=int(
-                                        LOT_SIZE
-                                    ),
+                                lot_size=int(
+                                    LOT_SIZE
+                                ),
 
-                                    price_by_option={
-                                        "CE": ce_price
-                                    },
-                                )
+                                strike=ce_strike,
+
+                                expiry=ce_expiry,
+
+                                option_type="CE",
+
+                                price_by_option={
+                                    "CE": ce_price
+                                },
                             )
 
 
@@ -2255,8 +3120,7 @@ if page == "🏠 Dashboard":
                             else:
 
                                 st.info(
-                                    "ℹ️ AUTO PAPER ALL → "
-                                    "CE EXIT: "
+                                    "ℹ️ CE EXIT: "
                                     + str(
                                         ce_result
                                     )
@@ -2270,17 +3134,19 @@ if page == "🏠 Dashboard":
                             )
 
 
-                    # --------------------------------------------
+                    # ------------------------------------------------
                     # PE EXIT
-                    # --------------------------------------------
+                    # ------------------------------------------------
 
                     if pe_price > 0:
 
                         try:
 
-                            pe_position = trader.get_position(
-                                trade_symbol,
-                                "PE",
+                            pe_position = (
+                                trader.get_position(
+                                    trade_symbol,
+                                    "PE",
+                                )
                             )
 
                         except Exception:
@@ -2288,33 +3154,61 @@ if page == "🏠 Dashboard":
                             pe_position = None
 
 
+                        pe_contract = (
+                            option_contract_by_option.get(
+                                "PE",
+                                {},
+                            )
+                        )
+
+                        pe_strike = safe_float(
+                            pe_contract.get(
+                                "strike",
+                                0,
+                            )
+                        )
+
+                        pe_expiry = (
+                            pe_contract.get(
+                                "expiry"
+                            )
+                        )
+
+
                         if pe_position:
 
-                            pe_success, pe_result = (
-                                trade_manager.process(
+                            (
+                                pe_success,
+                                pe_result,
+                            ) = process_trade_compatible(
 
-                                    symbol=trade_symbol,
+                                symbol=trade_symbol,
 
-                                    signal="SELL",
+                                signal="SELL",
 
-                                    current_price=pe_price,
+                                current_price=pe_price,
 
-                                    capital=trader.balance,
+                                capital=trader.balance,
 
-                                    option_mode="PE",
+                                option_mode="PE",
 
-                                    lots=int(
-                                        selected_lots
-                                    ),
+                                lots=int(
+                                    selected_lots
+                                ),
 
-                                    lot_size=int(
-                                        LOT_SIZE
-                                    ),
+                                lot_size=int(
+                                    LOT_SIZE
+                                ),
 
-                                    price_by_option={
-                                        "PE": pe_price
-                                    },
-                                )
+                                strike=pe_strike,
+
+                                expiry=pe_expiry,
+
+                                option_type="PE",
+
+                                price_by_option={
+                                    "PE": pe_price
+                                },
                             )
 
 
@@ -2331,8 +3225,7 @@ if page == "🏠 Dashboard":
                             else:
 
                                 st.info(
-                                    "ℹ️ AUTO PAPER ALL → "
-                                    "PE EXIT: "
+                                    "ℹ️ PE EXIT: "
                                     + str(
                                         pe_result
                                     )
@@ -2353,7 +3246,7 @@ if page == "🏠 Dashboard":
 
                         st.warning(
                             "⛔ AUTO PAPER ALL EXIT blocked: "
-                            "CE/PE LTP unavailable."
+                            "CE/PE exact LTP unavailable."
                         )
 
 
@@ -2377,25 +3270,50 @@ if page == "🏠 Dashboard":
                 )
 
 
+                selected_contract = (
+                    option_contract_by_option.get(
+                        option_mode,
+                        {},
+                    )
+                )
+
+
+                selected_strike = safe_float(
+                    selected_contract.get(
+                        "strike",
+                        0,
+                    )
+                )
+
+
+                selected_expiry = (
+                    selected_contract.get(
+                        "expiry"
+                    )
+                )
+
+
                 if option_price <= 0:
 
                     st.warning(
                         f"⛔ AUTO PAPER {option_mode} blocked: "
-                        "actual option LTP unavailable."
+                        "exact option LTP unavailable."
                     )
 
 
                 # ------------------------------------------------
-                # BUY
+                # BUY ONLY IF NO POSITION
                 # ------------------------------------------------
 
                 elif signal == "BUY":
 
                     try:
 
-                        existing_position = trader.get_position(
-                            trade_symbol,
-                            option_mode,
+                        existing_position = (
+                            trader.get_position(
+                                trade_symbol,
+                                option_mode,
+                            )
                         )
 
                     except Exception:
@@ -2412,31 +3330,38 @@ if page == "🏠 Dashboard":
 
                     else:
 
-                        success, result = (
-                            trade_manager.process(
+                        (
+                            success,
+                            result,
+                        ) = process_trade_compatible(
 
-                                symbol=trade_symbol,
+                            symbol=trade_symbol,
 
-                                signal="BUY",
+                            signal="BUY",
 
-                                current_price=option_price,
+                            current_price=option_price,
 
-                                capital=trader.balance,
+                            capital=trader.balance,
 
-                                option_mode=option_mode,
+                            option_mode=option_mode,
 
-                                lots=int(
-                                    selected_lots
-                                ),
+                            lots=int(
+                                selected_lots
+                            ),
 
-                                lot_size=int(
-                                    LOT_SIZE
-                                ),
+                            lot_size=int(
+                                LOT_SIZE
+                            ),
 
-                                price_by_option={
-                                    option_mode: option_price
-                                },
-                            )
+                            strike=selected_strike,
+
+                            expiry=selected_expiry,
+
+                            option_type=option_mode,
+
+                            price_by_option={
+                                option_mode: option_price
+                            },
                         )
 
 
@@ -2444,15 +3369,17 @@ if page == "🏠 Dashboard":
 
                             st.success(
                                 "🤖 AUTO PAPER "
-                                f"{option_mode} BUY: "
+                                f"{option_mode} BUY | "
+                                f"Strike {selected_strike:g} | "
+                                f"LTP ₹{option_price:,.2f} | "
+                                f"Expiry {selected_expiry} | "
                                 + str(result)
                             )
 
                         else:
 
                             st.info(
-                                "ℹ️ AUTO PAPER "
-                                f"{option_mode}: "
+                                f"ℹ️ AUTO PAPER {option_mode}: "
                                 + str(result)
                             )
 
@@ -2465,9 +3392,11 @@ if page == "🏠 Dashboard":
 
                     try:
 
-                        existing_position = trader.get_position(
-                            trade_symbol,
-                            option_mode,
+                        existing_position = (
+                            trader.get_position(
+                                trade_symbol,
+                                option_mode,
+                            )
                         )
 
                     except Exception:
@@ -2484,31 +3413,38 @@ if page == "🏠 Dashboard":
 
                     else:
 
-                        success, result = (
-                            trade_manager.process(
+                        (
+                            success,
+                            result,
+                        ) = process_trade_compatible(
 
-                                symbol=trade_symbol,
+                            symbol=trade_symbol,
 
-                                signal="SELL",
+                            signal="SELL",
 
-                                current_price=option_price,
+                            current_price=option_price,
 
-                                capital=trader.balance,
+                            capital=trader.balance,
 
-                                option_mode=option_mode,
+                            option_mode=option_mode,
 
-                                lots=int(
-                                    selected_lots
-                                ),
+                            lots=int(
+                                selected_lots
+                            ),
 
-                                lot_size=int(
-                                    LOT_SIZE
-                                ),
+                            lot_size=int(
+                                LOT_SIZE
+                            ),
 
-                                price_by_option={
-                                    option_mode: option_price
-                                },
-                            )
+                            strike=selected_strike,
+
+                            expiry=selected_expiry,
+
+                            option_type=option_mode,
+
+                            price_by_option={
+                                option_mode: option_price
+                            },
                         )
 
 
@@ -2516,14 +3452,15 @@ if page == "🏠 Dashboard":
 
                             st.success(
                                 "🔴 AUTO PAPER "
-                                f"{option_mode} EXIT: "
+                                f"{option_mode} EXIT | "
+                                f"LTP ₹{option_price:,.2f} | "
                                 + str(result)
                             )
 
                         else:
 
                             st.info(
-                                "ℹ️ AUTO PAPER "
+                                f"ℹ️ AUTO PAPER "
                                 f"{option_mode} EXIT: "
                                 + str(result)
                             )
@@ -2543,23 +3480,24 @@ if page == "🏠 Dashboard":
 
                 else:
 
-                    success, result = (
-                        trade_manager.process(
+                    (
+                        success,
+                        result,
+                    ) = process_trade_compatible(
 
-                            symbol=trade_symbol,
+                        symbol=trade_symbol,
 
-                            signal=signal,
+                        signal=signal,
 
-                            current_price=current_price,
+                        current_price=current_price,
 
-                            capital=trader.balance,
+                        capital=trader.balance,
 
-                            option_mode="N/A",
+                        option_mode="N/A",
 
-                            lots=1,
+                        lots=1,
 
-                            lot_size=1,
-                        )
+                        lot_size=1,
                     )
 
 
@@ -2637,10 +3575,23 @@ if page == "🏠 Dashboard":
 
             with tc2:
 
+                default_test_strike = (
+                    safe_float(
+                        exact_strike_from_api
+                    )
+                    or safe_float(
+                        exact_strike
+                    )
+                    or 23400.0
+                )
+
+
                 test_strike = st.number_input(
                     "Test Strike",
                     min_value=1.0,
-                    value=23500.0,
+                    value=float(
+                        default_test_strike
+                    ),
                     step=50.0,
                     key="offline_test_strike",
                 )
@@ -2650,7 +3601,12 @@ if page == "🏠 Dashboard":
 
                 test_expiry = st.text_input(
                     "Test Expiry",
-                    value="PAPER",
+                    value=(
+                        str(
+                            expiry_from_api
+                            or "PAPER"
+                        )
+                    ),
                     key="offline_test_expiry",
                 )
 
@@ -2743,10 +3699,18 @@ if page == "🏠 Dashboard":
             )
 
 
-            active_test_position = trader.get_position(
-                test_symbol,
-                test_option,
-            )
+            try:
+
+                active_test_position = (
+                    trader.get_position(
+                        test_symbol,
+                        test_option,
+                    )
+                )
+
+            except Exception:
+
+                active_test_position = None
 
 
             if active_test_position:
@@ -2985,10 +3949,8 @@ if page == "🏠 Dashboard":
 
             st.caption(
                 "Suggested test: BUY at ₹150 → "
-                "set Current LTP ₹160 → "
-                "CHECK SL/TARGET → then SELL/EXIT. "
-                "Target at 2% is ₹153, so ₹160 "
-                "should trigger Target."
+                "Current LTP ₹160 → CHECK SL/TARGET → "
+                "then SELL/EXIT."
             )
 
 
@@ -3003,37 +3965,29 @@ if page == "🏠 Dashboard":
             and futures_symbol
         ):
 
-            detailed_dashboard_symbol = futures_symbol
+            detailed_dashboard_symbol = (
+                futures_symbol
+            )
 
-            detailed_trade_symbol = futures_symbol
+            detailed_trade_symbol = (
+                futures_symbol
+            )
 
         else:
 
             detailed_dashboard_symbol = symbol
-
             detailed_trade_symbol = None
 
-
-        # ----------------------------------------------------
-        # Keep session state synchronized.
-        # ----------------------------------------------------
 
         st.session_state[
             "dashboard_symbol"
         ] = detailed_dashboard_symbol
 
+
         st.session_state[
             "selected_underlying_symbol"
         ] = symbol
 
-
-        # ----------------------------------------------------
-        # MAIN DETAILED DASHBOARD
-        #
-        # IMPORTANT:
-        # default_quantity sends selected option lot quantity
-        # into pages/dashboard_page.py
-        # ----------------------------------------------------
 
         dashboard_page(
 
@@ -3050,8 +4004,8 @@ if page == "🏠 Dashboard":
             default_quantity=int(
                 quantity
             ),
-
         )
+
 
     except Exception as e:
 
@@ -3100,6 +4054,7 @@ elif page == "📈 Market":
                 else 0.0
             ),
         )
+
 
     except Exception as e:
 
@@ -3236,4 +4191,3 @@ st.caption(
     "Jha SmartTrader AI Pro • "
     "AI Trading Terminal"
 )
-
