@@ -9,18 +9,92 @@ from neo_api_client import NeoAPI
 # KOTAK NEO CONFIG
 # ============================================================
 
-CONSUMER_KEY = config("KOTAK_CONSUMER_KEY", default="")
+def _get_secret(name):
+    """
+    Load secret safely from:
+    1. Environment variable
+    2. Streamlit Cloud Secrets
+    3. Local .env via python-decouple
 
-if not CONSUMER_KEY:
-    raise RuntimeError(
-        "KOTAK_CONSUMER_KEY is not configured in .env"
-    )
+    Never hard-code credentials in source code.
+    """
+
+    # --------------------------------------------------------
+    # 1. Environment variable
+    # --------------------------------------------------------
+
+    value = os.getenv(name, "").strip()
+
+    if value:
+        return value
+
+    # --------------------------------------------------------
+    # 2. Streamlit Cloud Secrets
+    # --------------------------------------------------------
+
+    try:
+        import streamlit as st
+
+        try:
+            value = str(st.secrets.get(name, "")).strip()
+
+            if value:
+                return value
+
+        except Exception:
+            pass
+
+    except Exception:
+        pass
+
+    # --------------------------------------------------------
+    # 3. Local .env
+    # --------------------------------------------------------
+
+    try:
+        value = config(name, default="").strip()
+
+        if value:
+            return value
+
+    except Exception:
+        pass
+
+    return ""
 
 
-neo = NeoAPI(
-    consumer_key=CONSUMER_KEY,
-    environment="prod",
+CONSUMER_KEY = _get_secret(
+    "KOTAK_CONSUMER_KEY"
 )
+
+
+# IMPORTANT:
+# Do NOT raise RuntimeError here.
+#
+# Streamlit Cloud may start without Kotak credentials.
+# The dashboard must still be able to load and use
+# fallback market data.
+#
+# NeoAPI is created only when Consumer Key exists.
+
+neo = None
+
+if CONSUMER_KEY:
+
+    try:
+
+        neo = NeoAPI(
+            consumer_key=CONSUMER_KEY,
+            environment="prod",
+        )
+
+    except Exception as exc:
+
+        neo = None
+
+        print(
+            f"Kotak Neo initialization failed: {exc}"
+        )
 
 
 # ============================================================
@@ -56,13 +130,15 @@ INDEX_CONFIG = {
 # ============================================================
 
 def normalize_strike(value):
+
     """
-    Kotak returns dStrikePrice; like:
+    Kotak returns dStrikePrice; for example:
 
         2375000.0 -> 23750.0
     """
 
     try:
+
         value = float(value)
 
         if value > 100000:
@@ -71,6 +147,7 @@ def normalize_strike(value):
         return value
 
     except Exception:
+
         return None
 
 
@@ -81,12 +158,14 @@ def normalize_strike(value):
 def parse_expiry(value):
 
     try:
+
         return datetime.strptime(
             str(value),
-            "%d%b%Y"
+            "%d%b%Y",
         )
 
     except Exception:
+
         return None
 
 
@@ -109,6 +188,14 @@ def calculate_atm(price, strike_step):
 
 def get_option_master(index_name):
 
+    if neo is None:
+
+        raise RuntimeError(
+            "Kotak Neo credentials are not configured. "
+            "Set KOTAK_CONSUMER_KEY in Streamlit Secrets "
+            "or local .env."
+        )
+
     index_name = index_name.upper().strip()
 
     records = neo.search_scrip(
@@ -120,7 +207,8 @@ def get_option_master(index_name):
     if not isinstance(records, list):
 
         raise RuntimeError(
-            f"Kotak search_scrip returned unexpected data: {records}"
+            "Kotak search_scrip returned unexpected data: "
+            f"{records}"
         )
 
     options = []
@@ -128,11 +216,13 @@ def get_option_master(index_name):
     for item in records:
 
         # Exact underlying only.
-        # This prevents NIFTYFPI etc.
+        # Prevents symbols such as NIFTYFPI etc.
+
         if item.get("pSymbolName") != index_name:
             continue
 
         # Only index options.
+
         if item.get("pInstType") != "OPTIDX":
             continue
 
@@ -141,7 +231,9 @@ def get_option_master(index_name):
         if option_type not in ("CE", "PE"):
             continue
 
-        expiry_raw = item.get("pExpiryDate")
+        expiry_raw = item.get(
+            "pExpiryDate"
+        )
 
         expiry_date = parse_expiry(
             expiry_raw
@@ -184,7 +276,11 @@ def resolve_atm_option(
             f"Unsupported index: {index_name}"
         )
 
-    if option_mode not in ("CE", "PE", "ALL"):
+    if option_mode not in (
+        "CE",
+        "PE",
+        "ALL",
+    ):
 
         raise ValueError(
             "option_mode must be CE, PE or ALL"
@@ -287,14 +383,14 @@ def resolve_atm_option(
             if item_option_type != option_mode:
                 continue
 
-        # IMPORTANT:
-        # Kotak token field is pSymbol.
+        # Kotak token field.
+
         token = item.get("pSymbol")
 
         if token is None:
 
             raise RuntimeError(
-                f"Kotak token missing for "
+                "Kotak token missing for "
                 f"{item.get('pTrdSymbol')}"
             )
 
@@ -378,86 +474,107 @@ def resolve_atm_option(
 if __name__ == "__main__":
 
     print("=" * 70)
-    print("KOTAK NEO - SMARTTRADER OPTION RESOLVER")
+    print(
+        "KOTAK NEO - SMARTTRADER OPTION RESOLVER"
+    )
     print("=" * 70)
 
-    test_price = 23769.80
+    if not CONSUMER_KEY:
 
-    result = resolve_atm_option(
-        index_name="NIFTY",
-        current_price=test_price,
-        option_mode="ALL",
-    )
+        print()
+        print(
+            "WARNING: KOTAK_CONSUMER_KEY is not configured."
+        )
+        print(
+            "Set it in .env or Streamlit Secrets."
+        )
+        print()
+        print(
+            "Resolver import test completed safely."
+        )
+        print("=" * 70)
 
-    print()
+    else:
 
-    print(
-        "Index          :",
-        result["index"]
-    )
+        test_price = 23769.80
 
-    print(
-        "Current Price  :",
-        result["underlying_price"]
-    )
+        result = resolve_atm_option(
+            index_name="NIFTY",
+            current_price=test_price,
+            option_mode="ALL",
+        )
 
-    print(
-        "ATM Strike     :",
-        result["atm_strike"]
-    )
-
-    print(
-        "Expiry         :",
-        result["expiry"]
-    )
-
-    print()
-
-    for option_type, contract in result[
-        "contracts"
-    ].items():
-
-        print("-" * 70)
-
-        print(option_type)
+        print()
 
         print(
-            "Trading Symbol :",
-            contract["trading_symbol"]
+            "Index          :",
+            result["index"],
         )
 
         print(
-            "Token          :",
-            contract["token"]
+            "Current Price  :",
+            result["underlying_price"],
         )
 
         print(
-            "Strike         :",
-            contract["strike"]
+            "ATM Strike     :",
+            result["atm_strike"],
         )
 
         print(
             "Expiry         :",
-            contract["expiry"]
+            result["expiry"],
         )
 
+        print()
+
+        for option_type, contract in result[
+            "contracts"
+        ].items():
+
+            print("-" * 70)
+
+            print(option_type)
+
+            print(
+                "Trading Symbol :",
+                contract["trading_symbol"],
+            )
+
+            print(
+                "Token          :",
+                contract["token"],
+            )
+
+            print(
+                "Strike         :",
+                contract["strike"],
+            )
+
+            print(
+                "Expiry         :",
+                contract["expiry"],
+            )
+
+            print(
+                "Lot Size       :",
+                contract["lot_size"],
+            )
+
+            print(
+                "Exchange       :",
+                contract["exchange_segment"],
+            )
+
+            print(
+                "Instrument     :",
+                contract["instrument"],
+            )
+
+        print()
+
+        print("=" * 70)
         print(
-            "Lot Size       :",
-            contract["lot_size"]
+            "SMARTTRADER OPTION RESOLVER TEST COMPLETE"
         )
-
-        print(
-            "Exchange       :",
-            contract["exchange_segment"]
-        )
-
-        print(
-            "Instrument     :",
-            contract["instrument"]
-        )
-
-    print()
-
-    print("=" * 70)
-    print("SMARTTRADER OPTION RESOLVER TEST COMPLETE")
-    print("=" * 70)
+        print("=" * 70)
