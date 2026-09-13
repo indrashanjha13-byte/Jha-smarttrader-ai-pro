@@ -2085,6 +2085,87 @@ if page == "🏠 Dashboard":
                 price_by_option[
                     "PE"
                 ] = pe_ltp_exact
+            # =================================================
+            #SYNC KOTAK CONTRACTS FROM EXACT OPTION API
+            # =================================================
+
+            def _normalize_kotak_contract(contract, option_type):
+
+                if not isinstance(contract, dict):
+                    return None
+
+                normalized = dict(contract)
+
+                trading_symbol = str(
+                    contract.get("trading_symbol")
+                    or contract.get("kotak_trading_symbol")
+                    or contract.get("symbol")
+                    or ""
+                ).strip()
+
+                token = str(
+                   contract.get("token")
+                   or contract.get("kotak_token")
+                   or ""
+                ).strip()
+
+                exchange_segment = str(
+                    contract.get("exchange_segment")
+                    or contract.get("kotak_exchange_segment")
+                    or "nse_fo"
+                ).strip()
+
+                instrument = str(
+                    contract.get("instrument")
+                    or contract.get("kotak_instrument")
+                    or "OPTIDX"
+                ).strip()
+
+                normalized.update({
+                    "trading_symbol": trading_symbol,
+                    "symbol": trading_symbol,
+                    "kotak_symbol": trading_symbol,
+                    "kotak_trading_symbol": trading_symbol,
+                    "token": token,
+                    "kotak_token": token,
+                    "exchange_segment": exchange_segment,
+                    "kotak_exchange_segment": exchange_segment,
+                    "instrument": instrument,
+                    "kotak_instrument": instrument,
+                    "option_type": str(
+                        contract.get("option_type", option_type)
+                    ).upper(),
+                    "source": "KOTAK_NEO",
+                })
+
+                return normalized
+
+
+            ce_api_contract = _normalize_kotak_contract(
+                exact_option_data.get("CE_CONTRACT"),
+                "CE",
+            )
+
+            pe_api_contract = _normalize_kotak_contract(
+                exact_option_data.get("PE_CONTRACT"),
+                "PE",
+            )
+
+
+            if ce_api_contract:
+                option_contract_by_option[
+                    "CE"
+                ] = ce_api_contract
+
+
+            if pe_api_contract:
+                option_contract_by_option[
+                    "PE"
+            ] = pe_api_contract
+
+# =================================================
+# UPDATE CE
+# =================================================
 
 
             # =================================================
@@ -3871,38 +3952,37 @@ if page == "🏠 Dashboard":
 
                     try:
 
-                        ok, result = trader.auto_exit(
-
-                            current_price=safe_float(
-                                test_ltp
-                            ),
-
+                        exit_result = trader.auto_exit(
+                            current_price=safe_float(test_ltp),
                             symbol=test_symbol,
-
                             option_mode=test_option,
+                            strike=test_strike,
+                            expiry=test_expiry,
                         )
 
+                        if exit_result is None:
 
-                        if ok:
-
-                            st.success(
-                                f"⚡ Auto Exit: {result}"
+                            st.info(
+                                f"ℹ️ No exit triggered at "
+                                f"₹{safe_float(test_ltp):,.2f}. "
+                                f"SL/Target not reached."
                             )
 
                         else:
 
-                            st.info(
-                                f"ℹ️ No exit triggered: {result}"
+                            st.success(
+                                f"⚡ Auto Exit: {exit_result}"
                             )
 
-
                     except Exception as e:
+
+                        logging.exception(
+                            "Offline paper option auto exit failed"
+                        )
 
                         st.error(
                             f"❌ Auto Exit error: {e}"
                         )
-
-
             with b3:
 
                 if st.button(
