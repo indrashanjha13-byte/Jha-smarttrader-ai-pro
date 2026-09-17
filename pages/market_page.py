@@ -6,6 +6,7 @@ from plotly.subplots import make_subplots
 from signals import get_signals
 from ai_decision import ai_decision
 import requests
+import logging
 
 def market_status_ribbon():
     c1, c2, c3, c4 = st.columns(4)
@@ -454,26 +455,64 @@ def market_page(
     st.divider()
 
     st.subheader("🇮🇳 Live Indices")
+
     index_list = {
         "NIFTY 50": "^NSEI",
         "BANKNIFTY": "^NSEBANK",
-        "SENSEX": "^BSESN"
+        "SENSEX": "^BSESN",
     }
 
     cols = st.columns(3)
+
     for i, (name, ticker) in enumerate(index_list.items()):
         try:
-            data = yf.download(ticker, period="2d", interval="1d", progress=False)
-            if len(data) >= 2:
-                prev = float(data["Close"].iloc[-2])
-                curr = float(data["Close"].iloc[-1])
-                change = round(curr - prev, 8)
-                percent = round((change / prev) * 100, 2)
-                cols[i].metric(name, f"{curr:.2f}", f"{change:.2f} ({percent}%)")
-            else:
+            data = yf.download(
+                ticker,
+                period="5d",
+                interval="1d",
+                auto_adjust=False,
+                progress=False,
+            )
+
+            if data is None or data.empty:
                 cols[i].metric(name, "No Data")
-        except Exception:
-            cols[i].metric(name, "No Data")
+                continue
+
+            if isinstance(data.columns, pd.MultiIndex):
+                data.columns = data.columns.get_level_values(0)
+
+            close = pd.to_numeric(
+                data["Close"],
+                errors="coerce"
+            ).dropna()
+
+            if close.empty:
+                cols[i].metric(name, "No Data")
+                continue
+
+            curr = float(close.iloc[-1])
+
+            if len(close) >= 2:
+                prev = float(close.iloc[-2])
+                change = curr - prev
+                percent = (change / prev) * 100 if prev else 0.0
+
+                cols[i].metric(
+                    name,
+                    f"{curr:,.2f}",
+                    f"{change:+,.2f} ({percent:+.2f}%)"
+                )
+            else:
+                cols[i].metric(
+                    name,
+                    f"{curr:,.2f}",
+                    "Live"
+                )
+
+        except Exception as e:
+            cols[i].error(
+                f"{name}: {type(e).__name__}: {e}"
+            )
 
     st.divider()
 

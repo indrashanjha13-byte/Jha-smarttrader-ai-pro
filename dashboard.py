@@ -6,13 +6,13 @@
 from pathlib import Path
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
+import pandas as pd
 import inspect
 import logging
 
 import streamlit as st
 from PIL import Image
 from streamlit_autorefresh import st_autorefresh
-
 
 # ============================================================
 # PROJECT IMPORTS
@@ -43,7 +43,6 @@ from fo_symbols import (
 
 from settings_manager import load_settings
 
-
 # ============================================================
 # PAGES
 # ============================================================
@@ -55,13 +54,11 @@ from pages.reports_page import reports_page
 from pages.settings_page import settings_page
 from pages.trading_page import trading_page
 
-
 # ============================================================
 # DELTA FUTURES
 # ============================================================
 
 from delta_futures import DeltaFutures
-
 
 # ============================================================
 # OPTIONS
@@ -73,13 +70,11 @@ from option_contracts import (
     get_strike_modes,
 )
 
-
 # ============================================================
 # KOTAK NEO OPTION RESOLVER
 # ============================================================
 
 from kotak_option_resolver import resolve_atm_option
-
 
 # ============================================================
 # STREAMLIT CONFIG
@@ -92,7 +87,6 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-
 # ============================================================
 # LOGGING
 # ============================================================
@@ -101,7 +95,6 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
-
 
 # ============================================================
 # CSS
@@ -128,7 +121,6 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-
 
 # ============================================================
 # SAFE FLOAT
@@ -163,7 +155,6 @@ def safe_float(value, default=0.0):
     except Exception:
         return default
 
-
 # ============================================================
 # OPTION CHAIN CACHE
 # ============================================================
@@ -179,7 +170,6 @@ def get_cached_option_chain():
             f"Option chain error: {e}"
         )
         return None
-
 
 # ============================================================
 # EXACT OPTION PRICE CACHE
@@ -221,7 +211,6 @@ def get_cached_exact_option_prices(
 
         return None
 
-
 # ============================================================
 # NORMALIZE SIGNAL
 # ============================================================
@@ -245,7 +234,6 @@ def normalize_signal(value):
         return "SELL"
 
     return "HOLD"
-
 
 # ============================================================
 # POSITION SIDE
@@ -286,7 +274,6 @@ def normalize_position_side(position):
         return "SHORT"
 
     return "LONG"
-
 
 # ============================================================
 # DELTA SYMBOL DETECTION
@@ -334,7 +321,6 @@ def is_delta_symbol(symbol):
 
     except Exception:
         return False
-
 
 # ============================================================
 # MARKET STATUS
@@ -434,7 +420,7 @@ def get_market_status(symbol):
         "manage_positions": True,
         "message": "🔴 Indian Market CLOSED • Session 09:15–15:30 IST.",
     }
-    
+
 # ============================================================
 # OPTION SYMBOL MAP
 # ============================================================
@@ -446,7 +432,6 @@ OPTION_SYMBOL_MAP = {
     "^NSEMDCP50": "MIDCPNIFTY",
     "^BSESN": "SENSEX",
 }
-
 
 # ============================================================
 # SUPPORTED SYMBOLS
@@ -468,7 +453,6 @@ symbols = [
     "AXISBANK.NS",
 ]
 
-
 # ============================================================
 # BASE DIRECTORY
 # ============================================================
@@ -476,7 +460,6 @@ symbols = [
 BASE_DIR = Path(
     __file__
 ).resolve().parent
-
 
 # ============================================================
 # LOGO
@@ -503,7 +486,6 @@ if logo_path.exists():
             f"Logo error: {e}"
         )
 
-
 # ============================================================
 # SIDEBAR HEADER
 # ============================================================
@@ -518,7 +500,6 @@ st.sidebar.caption(
 
 st.sidebar.divider()
 
-
 # ============================================================
 # SESSION STATE
 # ============================================================
@@ -531,7 +512,6 @@ if "trader" not in st.session_state:
 
 trader = st.session_state.trader
 
-
 if "trade_manager" not in st.session_state:
 
     st.session_state.trade_manager = TradeManager(
@@ -539,7 +519,6 @@ if "trade_manager" not in st.session_state:
     )
 
 trade_manager = st.session_state.trade_manager
-
 
 try:
 
@@ -551,13 +530,11 @@ except Exception:
 
     pass
 
-
 if "backtester" not in st.session_state:
 
     st.session_state.backtester = BacktestEngine()
 
 backtester = st.session_state.backtester
-
 
 # ============================================================
 # SETTINGS
@@ -576,7 +553,6 @@ try:
 except Exception:
 
     settings = {}
-
 
 # ============================================================
 # SYSTEM STATUS
@@ -607,8 +583,739 @@ st.sidebar.info(
 
 st.sidebar.divider()
 
+# ============================================================
 
 # ============================================================
+# DELTA ALL COINS FUNCTIONS
+# ============================================================
+# DELTA ALL COINS
+# ============================================================
+
+@st.cache_data(ttl=10)
+def get_cached_delta_products():
+    """Load all live Delta Futures/Perpetual contracts."""
+    try:
+        delta = DeltaFutures()
+        products = delta.get_futures()
+
+        if not isinstance(products, list):
+            return []
+
+        return products
+
+    except Exception as e:
+        logging.exception("Delta products error")
+        return []
+
+@st.cache_data(ttl=5)
+def get_cached_delta_tickers():
+    """Load live tickers for Delta Futures/Perpetual contracts."""
+    try:
+        delta = DeltaFutures()
+        tickers = delta.get_all_tickers()
+
+        if not isinstance(tickers, list):
+            return []
+
+        return tickers
+
+    except Exception as e:
+        logging.exception("Delta tickers error")
+        return []
+
+def render_delta_all_coins():
+
+    st.title("📊 Delta All Coins")
+    st.caption(
+        "Delta Exchange India • Live Futures & Perpetual Contracts • 24/7"
+    )
+
+    # --------------------------------------------------------
+    # LOAD PRODUCTS + TICKERS
+    # --------------------------------------------------------
+
+    products = get_cached_delta_products()
+    tickers = get_cached_delta_tickers()
+
+    if not products:
+        st.error("❌ Delta Futures contracts load nahi ho rahe.")
+        st.info("Please check Delta API connection.")
+        return
+
+    # --------------------------------------------------------
+    # MAP PRODUCTS
+    # --------------------------------------------------------
+
+    product_map = {}
+
+    for product in products:
+
+        if not isinstance(product, dict):
+            continue
+
+        symbol = str(
+            product.get("symbol", "")
+        ).strip().upper()
+
+        if symbol:
+            product_map[symbol] = product
+
+    # --------------------------------------------------------
+    # MAP TICKERS
+    # --------------------------------------------------------
+
+    ticker_map = {}
+
+    for ticker in tickers:
+
+        if not isinstance(ticker, dict):
+            continue
+
+        symbol = str(
+            ticker.get("symbol", "")
+        ).strip().upper()
+
+        if symbol:
+            ticker_map[symbol] = ticker
+
+    # --------------------------------------------------------
+    # BUILD ALL CONTRACT DATA
+    # --------------------------------------------------------
+
+    rows = []
+
+    for symbol, product in product_map.items():
+
+        ticker = ticker_map.get(symbol, {})
+
+        price = safe_float(
+            ticker.get(
+                "close",
+                ticker.get(
+                    "price",
+                    ticker.get(
+                        "mark_price",
+                        0
+                    )
+                )
+            )
+        )
+
+        change = safe_float(
+            ticker.get(
+                "ltp_change_24h",
+                ticker.get(
+                    "mark_change_24h",
+                    0
+                )
+            )
+        )
+
+        high = safe_float(
+            ticker.get(
+                "high",
+                0
+            )
+        )
+
+        low = safe_float(
+            ticker.get(
+                "low",
+                0
+            )
+        )
+
+        volume = safe_float(
+            ticker.get(
+                "volume",
+                0
+            )
+        )
+
+        oi = safe_float(
+            ticker.get(
+                "oi",
+                ticker.get(
+                    "oi_contracts",
+                    0
+                )
+            )
+        )
+
+        oi_value = safe_float(
+            ticker.get(
+                "oi_value_usd",
+                ticker.get(
+                    "oi_value",
+                    0
+                )
+            )
+        )
+
+        funding = safe_float(
+            ticker.get(
+                "funding_rate",
+                0
+            )
+        )
+
+        leverage = safe_float(
+            ticker.get(
+                "leverage",
+                product.get(
+                    "default_leverage",
+                    0
+                )
+            )
+        )
+
+        contract_type = str(
+            product.get(
+                "contract_type",
+                ticker.get(
+                    "contract_type",
+                    ""
+                )
+            )
+        ).strip()
+
+        contract_upper = contract_type.upper()
+
+        if "PERPETUAL" in contract_upper:
+            contract_display = "PERPETUAL"
+        elif "FUTURE" in contract_upper:
+            contract_display = "FUTURES"
+        else:
+            contract_display = (
+                contract_upper
+                if contract_upper
+                else "-"
+            )
+
+        status = str(
+            ticker.get(
+                "product_trading_status",
+                product.get(
+                    "state",
+                    ""
+                )
+            )
+        ).strip()
+
+        underlying = product.get(
+            "underlying_asset",
+            {}
+        )
+
+        if isinstance(underlying, dict):
+            coin = str(
+                underlying.get(
+                    "symbol",
+                    symbol.replace(
+                        "USD",
+                        ""
+                    )
+                )
+            )
+        else:
+            coin = str(
+                underlying
+                or symbol.replace(
+                    "USD",
+                    ""
+                )
+            )
+
+        rows.append(
+            {
+                "Coin": coin,
+                "Symbol": symbol,
+                "LTP": price,
+                "24H %": change,
+                "24H High": high,
+                "24H Low": low,
+                "Volume": volume,
+                "Open Interest": oi,
+                "OI Value": oi_value,
+                "Funding": funding,
+                "Leverage": leverage,
+                "Contract": contract_display,
+                "Status": status or "-",
+                "Description": str(
+                    product.get(
+                        "description",
+                        ""
+                    )
+                ),
+            }
+        )
+
+    # --------------------------------------------------------
+    # DATAFRAME
+    # --------------------------------------------------------
+
+    if not rows:
+        st.warning(
+            "⚠️ Live Delta contracts available nahi hain."
+        )
+        return
+
+    df = pd.DataFrame(rows)
+
+    df = df.sort_values(
+        by=["Coin", "Symbol"]
+    ).reset_index(
+        drop=True
+    )
+
+    # --------------------------------------------------------
+    # TOP METRICS
+    # --------------------------------------------------------
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    with c1:
+        st.metric(
+            "📦 Total Contracts",
+            len(df)
+        )
+
+    with c2:
+        st.metric(
+            "🟢 Live Prices",
+            int(
+                (df["LTP"] > 0).sum()
+            )
+        )
+
+    with c3:
+        st.metric(
+            "♾️ Perpetual",
+            int(
+                (
+                    df["Contract"]
+                    == "PERPETUAL"
+                ).sum()
+            )
+        )
+
+    with c4:
+        st.metric(
+            "📅 Futures",
+            int(
+                (
+                    df["Contract"]
+                    == "FUTURES"
+                ).sum()
+            )
+        )
+
+    st.divider()
+
+    # --------------------------------------------------------
+    # SEARCH
+    # --------------------------------------------------------
+
+    search = st.text_input(
+        "🔎 Search Delta Coin / Contract",
+        placeholder=(
+            "BTCUSD, ETHUSD, SOLUSD, XRPUSD..."
+        ),
+        key="delta_all_coins_search"
+    )
+
+    contract_filter = st.selectbox(
+        "Contract Type",
+        [
+            "ALL",
+            "PERPETUAL",
+            "FUTURES",
+        ],
+        key="delta_contract_filter"
+    )
+
+    filtered_df = df.copy()
+
+    if search:
+
+        search_text = (
+            str(search)
+            .strip()
+            .upper()
+        )
+
+        filtered_df = filtered_df[
+            filtered_df[
+                "Symbol"
+            ].str.contains(
+                search_text,
+                na=False
+            )
+            |
+            filtered_df[
+                "Coin"
+            ].str.contains(
+                search_text,
+                na=False
+            )
+        ]
+
+    if contract_filter != "ALL":
+
+        filtered_df = filtered_df[
+            filtered_df[
+                "Contract"
+            ]
+            == contract_filter
+        ]
+
+    st.caption(
+        f"Showing {len(filtered_df)} "
+        f"of {len(df)} contracts"
+    )
+
+    # --------------------------------------------------------
+    # EMPTY SEARCH
+    # --------------------------------------------------------
+
+    if filtered_df.empty:
+
+        st.warning(
+            "❌ Search ke liye koi Delta "
+            "contract nahi mila."
+        )
+        return
+
+    # --------------------------------------------------------
+    # DISPLAY TABLE
+    # --------------------------------------------------------
+
+    display_df = filtered_df.copy()
+
+    display_df["LTP"] = display_df[
+        "LTP"
+    ].apply(
+        lambda x: (
+            f"${x:,.8f}"
+            if x > 0
+            else "-"
+        )
+    )
+
+    display_df["24H %"] = display_df[
+        "24H %"
+    ].apply(
+        lambda x: f"{x:.2f}%"
+    )
+
+    display_df["24H High"] = display_df[
+        "24H High"
+    ].apply(
+        lambda x: (
+            f"${x:,.8f}"
+            if x > 0
+            else "-"
+        )
+    )
+
+    display_df["24H Low"] = display_df[
+        "24H Low"
+    ].apply(
+        lambda x: (
+            f"${x:,.8f}"
+            if x > 0
+            else "-"
+        )
+    )
+
+    display_df["Volume"] = display_df[
+        "Volume"
+    ].apply(
+        lambda x: f"{x:,.2f}"
+    )
+
+    display_df["Open Interest"] = (
+        display_df[
+            "Open Interest"
+        ].apply(
+            lambda x: f"{x:,.2f}"
+        )
+    )
+
+    display_df["OI Value"] = (
+        display_df[
+            "OI Value"
+        ].apply(
+            lambda x: f"${x:,.2f}"
+        )
+    )
+
+    display_df["Funding"] = (
+        display_df[
+            "Funding"
+        ].apply(
+            lambda x: f"{x:.6f}%"
+        )
+    )
+
+    display_df["Leverage"] = (
+        display_df[
+            "Leverage"
+        ].apply(
+            lambda x: (
+                f"{x:.0f}x"
+                if x > 0
+                else "-"
+            )
+        )
+    )
+
+    st.dataframe(
+        display_df[
+            [
+                "Coin",
+                "Symbol",
+                "LTP",
+                "24H %",
+                "24H High",
+                "24H Low",
+                "Volume",
+                "Open Interest",
+                "OI Value",
+                "Funding",
+                "Leverage",
+                "Contract",
+                "Status",
+            ]
+        ],
+        use_container_width=True,
+        hide_index=True,
+        height=600,
+    )
+
+    # --------------------------------------------------------
+    # SELECT CONTRACT
+    # --------------------------------------------------------
+
+    st.divider()
+
+    selected_symbol = st.selectbox(
+        "🪙 Select Coin / Contract for AI Analysis",
+        filtered_df[
+            "Symbol"
+        ].tolist(),
+        key="delta_all_coins_selected"
+    )
+
+    selected_row = filtered_df[
+        filtered_df[
+            "Symbol"
+        ]
+        == selected_symbol
+    ]
+
+    if selected_row.empty:
+        return
+
+    selected = selected_row.iloc[0]
+
+    # --------------------------------------------------------
+    # SELECTED CONTRACT
+    # --------------------------------------------------------
+
+    st.subheader(
+        f"🪙 {selected_symbol}"
+    )
+
+    m1, m2, m3, m4 = st.columns(4)
+
+    with m1:
+        st.metric(
+            "Live Price",
+            (
+                f"${selected['LTP']:,.8f}"
+                if selected["LTP"] > 0
+                else "N/A"
+            )
+        )
+
+    with m2:
+        st.metric(
+            "24H Change",
+            f"{selected['24H %']:.2f}%"
+        )
+
+    with m3:
+        st.metric(
+            "Open Interest",
+            f"{selected['Open Interest']:,.2f}"
+        )
+
+    with m4:
+        st.metric(
+            "Funding",
+            f"{selected['Funding']:.6f}%"
+        )
+
+    # --------------------------------------------------------
+    # CONTRACT DETAILS
+    # --------------------------------------------------------
+
+    with st.expander(
+        "📋 Contract Details",
+        expanded=False
+    ):
+
+        selected_product = product_map.get(
+            selected_symbol,
+            {}
+        )
+
+        details = {
+            "Symbol": selected_symbol,
+            "Coin": selected["Coin"],
+            "Contract Type": selected_product.get(
+                "contract_type",
+                "N/A"
+            ),
+            "Product ID": selected_product.get(
+                "id",
+                "N/A"
+            ),
+            "Description": selected_product.get(
+                "description",
+                "N/A"
+            ),
+            "Underlying": selected_product.get(
+                "underlying_asset",
+                "N/A"
+            ),
+            "Settlement Asset": selected_product.get(
+                "settling_asset",
+                "N/A"
+            ),
+            "Tick Size": selected_product.get(
+                "tick_size",
+                "N/A"
+            ),
+            "Contract Value": selected_product.get(
+                "contract_value",
+                "N/A"
+            ),
+            "Leverage": selected["Leverage"],
+            "Status": selected["Status"],
+        }
+
+        st.dataframe(
+            pd.DataFrame(
+                list(details.items()),
+                columns=[
+                    "Field",
+                    "Value"
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    # --------------------------------------------------------
+    # AI ANALYSIS
+    # --------------------------------------------------------
+
+    st.subheader(
+        "🤖 AI Analysis"
+    )
+
+    try:
+
+        analysis_signal = get_signals(
+            selected_symbol
+        )
+
+        if isinstance(
+            analysis_signal,
+            dict
+        ):
+
+            signal_value = (
+                analysis_signal.get(
+                    "signal",
+                    analysis_signal.get(
+                        "action",
+                        "HOLD"
+                    )
+                )
+            )
+
+            confidence = safe_float(
+                analysis_signal.get(
+                    "confidence",
+                    0
+                )
+            )
+
+            trend = analysis_signal.get(
+                "trend",
+                "N/A"
+            )
+
+            a1, a2, a3 = st.columns(3)
+
+            with a1:
+                st.metric(
+                    "Signal",
+                    str(
+                        signal_value
+                    ).upper()
+                )
+
+            with a2:
+                st.metric(
+                    "Confidence",
+                    f"{confidence:.1f}%"
+                )
+
+            with a3:
+                st.metric(
+                    "Trend",
+                    str(trend)
+                )
+
+            with st.expander(
+                "🔍 Full AI Signal Data",
+                expanded=False
+            ):
+                st.json(
+                    analysis_signal
+                )
+
+        else:
+
+            st.info(
+                "AI signal data available nahi hai."
+            )
+
+    except Exception as e:
+
+        st.warning(
+            f"⚠️ AI analysis unavailable: {e}"
+        )
+
+    # --------------------------------------------------------
+    # SAFETY
+    # --------------------------------------------------------
+
+    st.info(
+        "ℹ️ Delta All Coins screen market-data "
+        "aur AI analysis ke liye hai. Is screen "
+        "se koi live order automatically place "
+        "nahi hota."
+    )
+
+# ============================================================
+
+# ============================================================
+
 # NAVIGATION
 # ============================================================
 
@@ -616,6 +1323,7 @@ page = st.sidebar.radio(
     "📂 Navigation",
     [
         "🏠 Dashboard",
+        "📊 Delta All Coins",
         "📈 Market",
         "💰 Trading",
         "📦 Portfolio",
@@ -624,7 +1332,6 @@ page = st.sidebar.radio(
     ],
 )
 
-
 # ============================================================
 # PARAMETERS
 # ============================================================
@@ -632,7 +1339,6 @@ page = st.sidebar.radio(
 st.sidebar.title(
     "⚙ Parameters"
 )
-
 
 # ============================================================
 # SYMBOL
@@ -646,7 +1352,6 @@ default_symbol = settings.get(
 if default_symbol not in symbols:
     default_symbol = "^NSEI"
 
-
 symbol = st.sidebar.selectbox(
     "Select Symbol",
     symbols,
@@ -655,11 +1360,9 @@ symbol = st.sidebar.selectbox(
     ),
 )
 
-
 st.session_state[
     "selected_underlying_symbol"
 ] = symbol
-
 
 # ============================================================
 # STRATEGY
@@ -673,7 +1376,6 @@ strategies = [
     "AI Combo",
 ]
 
-
 default_strategy = settings.get(
     "strategy",
     "AI Combo",
@@ -682,7 +1384,6 @@ default_strategy = settings.get(
 if default_strategy not in strategies:
     default_strategy = "AI Combo"
 
-
 strategy_name = st.sidebar.selectbox(
     "Strategy",
     strategies,
@@ -690,7 +1391,6 @@ strategy_name = st.sidebar.selectbox(
         default_strategy
     ),
 )
-
 
 # ============================================================
 # AI STRATEGY
@@ -726,7 +1426,6 @@ if strategy_name == "AI Combo":
         st.sidebar.caption(
             "AI Strategy : Default"
         )
-
 
 # ============================================================
 # DEFAULT VARIABLES
@@ -774,7 +1473,6 @@ pe_ltp_exact = 0.0
 
 exact_option_data = None
 
-
 # ============================================================
 # MARKET TYPE
 # ============================================================
@@ -804,7 +1502,6 @@ else:
         key="stock_market_type",
     )
 
-
 # ============================================================
 # OPTION CONFIGURATION
 # ============================================================
@@ -830,13 +1527,11 @@ if (
 
         LOT_SIZE = 1
 
-
     options = [
         "CE",
         "PE",
         "ALL",
     ]
-
 
     default_option = settings.get(
         "option",
@@ -846,7 +1541,6 @@ if (
     if default_option not in options:
         default_option = "ALL"
 
-
     option_mode = st.sidebar.selectbox(
         "Option Mode",
         options,
@@ -855,7 +1549,6 @@ if (
         ),
         key="dashboard_option_mode",
     )
-
 
     try:
 
@@ -877,7 +1570,6 @@ if (
             "OTM",
         ]
 
-
     default_strike = settings.get(
         "strike",
         "ATM",
@@ -885,7 +1577,6 @@ if (
 
     if default_strike not in strike_modes:
         default_strike = "ATM"
-
 
     strike_mode = st.sidebar.selectbox(
         "Strike",
@@ -896,7 +1587,6 @@ if (
         key="dashboard_strike_mode",
     )
 
-
     selected_lots = st.sidebar.number_input(
         "Number of Lots",
         min_value=1,
@@ -906,12 +1596,10 @@ if (
         key="dashboard_lots",
     )
 
-
     quantity = (
         int(selected_lots)
         * int(LOT_SIZE)
     )
-
 
     st.sidebar.caption(
         f"📦 Lot Size : {LOT_SIZE}"
@@ -920,7 +1608,6 @@ if (
     st.sidebar.success(
         f"🔢 Order Quantity : {quantity}"
     )
-
 
 # ============================================================
 # FUTURES CONFIGURATION
@@ -958,7 +1645,6 @@ if market_type == "FUTURES":
                         ).strip().upper()
                     )
 
-
         futures_symbols = sorted(
             list(
                 set(
@@ -975,7 +1661,6 @@ if market_type == "FUTURES":
 
         futures_symbols = []
 
-
     if not futures_symbols:
 
         futures_symbols = [
@@ -984,7 +1669,6 @@ if market_type == "FUTURES":
             "1000BONKUSD",
         ]
 
-
     default_futures = settings.get(
         "futures_symbol",
         futures_symbols[0],
@@ -992,7 +1676,6 @@ if market_type == "FUTURES":
 
     if default_futures not in futures_symbols:
         default_futures = futures_symbols[0]
-
 
     futures_symbol = st.sidebar.selectbox(
         "Delta Futures",
@@ -1003,18 +1686,15 @@ if market_type == "FUTURES":
         key="dashboard_futures_symbol",
     )
 
-
     st.session_state[
         "futures_symbol"
     ] = futures_symbol
-
 
     option_mode = "N/A"
     strike_mode = "N/A"
     selected_lots = 1
     LOT_SIZE = 1
     quantity = 1
-
 
 # ============================================================
 # FUTURES LIVE PRICE
@@ -1045,7 +1725,6 @@ if market_type == "FUTURES":
                 )
             )
 
-
         if current_price > 0:
 
             st.sidebar.success(
@@ -1067,7 +1746,6 @@ if market_type == "FUTURES":
             f"Futures price error: {e}"
         )
 
-
 # ============================================================
 # MARKET STATUS
 # ============================================================
@@ -1081,7 +1759,6 @@ market_status_symbol = (
 market_status = get_market_status(
     market_status_symbol
 )
-
 
 if market_status["market"] == "DELTA":
 
@@ -1113,7 +1790,6 @@ else:
             "🔴 INDIAN MARKET : CLOSED"
         )
 
-
 # ============================================================
 # TRADING MODE
 # ============================================================
@@ -1124,13 +1800,11 @@ st.sidebar.subheader(
     "🤖 Trading Mode"
 )
 
-
 paper_trading = st.sidebar.toggle(
     "🟢 Paper Trading",
     value=True,
     key="paper_trading_switch",
 )
-
 
 auto_paper_trading = st.sidebar.toggle(
     "🟢 Auto Paper Trading",
@@ -1138,20 +1812,17 @@ auto_paper_trading = st.sidebar.toggle(
     key="auto_paper_trading_switch",
 )
 
-
 live_auto_trading = st.sidebar.toggle(
     "🔴 Live Auto Trading",
     value=False,
     key="live_auto_trading_switch",
 )
 
-
 # ============================================================
 # MODE CONTROL
 # ============================================================
 
 live_confirm = False
-
 
 if live_auto_trading:
 
@@ -1180,7 +1851,6 @@ if live_auto_trading:
             "🔒 Live trading locked"
         )
 
-
 elif paper_trading:
 
     try:
@@ -1203,7 +1873,6 @@ elif paper_trading:
         st.sidebar.info(
             "⚪ AUTO PAPER TRADING : OFF"
         )
-
 
 # ============================================================
 # HELPER:
@@ -1237,7 +1906,6 @@ def get_kotak_atm_contract(
 
             return None
 
-
         contracts = result.get(
             "contracts",
             {},
@@ -1249,11 +1917,9 @@ def get_kotak_atm_contract(
         ):
             contracts = {}
 
-
         raw_contract = contracts.get(
             option_type
         )
-
 
         if not isinstance(
             raw_contract,
@@ -1263,7 +1929,6 @@ def get_kotak_atm_contract(
             raw_contract = result.get(
                 option_type
             )
-
 
         if not isinstance(
             raw_contract,
@@ -1277,11 +1942,9 @@ def get_kotak_atm_contract(
 
             return None
 
-
         contract = dict(
             raw_contract
         )
-
 
         kotak_expiry = (
             contract.get(
@@ -1291,7 +1954,6 @@ def get_kotak_atm_contract(
                 "expiry"
             )
         )
-
 
         kotak_exchange = (
             contract.get(
@@ -1303,14 +1965,12 @@ def get_kotak_atm_contract(
             or "nse_fo"
         )
 
-
         kotak_strike = safe_float(
             contract.get(
                 "strike",
                 0,
             )
         )
-
 
         if kotak_strike <= 0:
 
@@ -1320,7 +1980,6 @@ def get_kotak_atm_contract(
                     0,
                 )
             )
-
 
         kotak_lot_size = int(
             safe_float(
@@ -1332,13 +1991,11 @@ def get_kotak_atm_contract(
             )
         )
 
-
         if kotak_lot_size <= 0:
 
             kotak_lot_size = int(
                 fallback_lot_size
             )
-
 
         kotak_symbol = str(
             contract.get(
@@ -1354,7 +2011,6 @@ def get_kotak_atm_contract(
             or ""
         ).strip()
 
-
         kotak_token = str(
             contract.get(
                 "token",
@@ -1365,7 +2021,6 @@ def get_kotak_atm_contract(
             )
             or ""
         ).strip()
-
 
         kotak_instrument = str(
             contract.get(
@@ -1378,7 +2033,6 @@ def get_kotak_atm_contract(
             or "OPTIDX"
         ).strip()
 
-
         kotak_option_type = str(
             contract.get(
                 "option_type",
@@ -1387,11 +2041,9 @@ def get_kotak_atm_contract(
             or option_type
         ).upper()
 
-
         normalized = dict(
             contract
         )
-
 
         normalized.update(
             {
@@ -1434,7 +2086,6 @@ def get_kotak_atm_contract(
             }
         )
 
-
         if kotak_symbol:
 
             normalized[
@@ -1452,7 +2103,6 @@ def get_kotak_atm_contract(
                 f"{kotak_option_type}"
             ).strip()
 
-
         logging.info(
             "KOTAK ATM CONTRACT | "
             f"{index_name} | "
@@ -1463,9 +2113,7 @@ def get_kotak_atm_contract(
             f"Token={kotak_token}"
         )
 
-
         return normalized
-
 
     except Exception as e:
 
@@ -1474,7 +2122,6 @@ def get_kotak_atm_contract(
         )
 
         return None
-
 
 # ============================================================
 # HELPER:
@@ -1529,7 +2176,6 @@ def process_trade_compatible(
                 f"TradeManager signature inspect error: {e}"
             )
 
-
         kwargs = {
             "symbol": symbol,
             "signal": signal,
@@ -1543,7 +2189,6 @@ def process_trade_compatible(
             "option_type": option_type,
             "price_by_option": price_by_option,
         }
-
 
         # ----------------------------------------------------
         # **kwargs support
@@ -1570,13 +2215,11 @@ def process_trade_compatible(
             except Exception:
                 pass
 
-
         if accepts_kwargs:
 
             return process_method(
                 **kwargs
             )
-
 
         # ----------------------------------------------------
         # Only supported parameters
@@ -1595,11 +2238,9 @@ def process_trade_compatible(
                     key
                 ] = value
 
-
         return process_method(
             **filtered_kwargs
         )
-
 
     except Exception as e:
 
@@ -1611,7 +2252,6 @@ def process_trade_compatible(
             False,
             str(e),
         )
-
 
 # ============================================================
 # DASHBOARD PAGE
@@ -1634,11 +2274,9 @@ if page == "🏠 Dashboard":
 
         dashboard_symbol = symbol
 
-
     st.session_state[
         "dashboard_symbol"
     ] = dashboard_symbol
-
 
     # ========================================================
     # GET SIGNAL
@@ -1656,7 +2294,6 @@ if page == "🏠 Dashboard":
             "error": str(e)
         }
 
-
     if not isinstance(
         signal_data,
         dict,
@@ -1665,7 +2302,6 @@ if page == "🏠 Dashboard":
         signal_data = {
             "error": "Invalid signal response"
         }
-
 
     # ========================================================
     # PRICE
@@ -1712,11 +2348,9 @@ if page == "🏠 Dashboard":
 
         underlying_price = current_price
 
-
     st.session_state[
         "current_price"
     ] = underlying_price
-
 
     # ========================================================
     # RESET OPTION DATA
@@ -1736,7 +2370,6 @@ if page == "🏠 Dashboard":
 
     exact_option_data = None
 
-
     # ========================================================
     # OPTION CONTRACT RESOLUTION
     # ========================================================
@@ -1751,7 +2384,6 @@ if page == "🏠 Dashboard":
             symbol
         ]
 
-
         # ====================================================
         # RESOLVE CE
         # ====================================================
@@ -1763,7 +2395,6 @@ if page == "🏠 Dashboard":
 
             ce_contract = None
 
-
             if strike_mode == "ATM":
 
                 ce_contract = (
@@ -1774,7 +2405,6 @@ if page == "🏠 Dashboard":
                         fallback_lot_size=LOT_SIZE,
                     )
                 )
-
 
             if ce_contract is None:
 
@@ -1797,7 +2427,6 @@ if page == "🏠 Dashboard":
 
                     ce_contract = None
 
-
             if isinstance(
                 ce_contract,
                 dict,
@@ -1806,7 +2435,6 @@ if page == "🏠 Dashboard":
                 option_contract_by_option[
                     "CE"
                 ] = ce_contract
-
 
         # ====================================================
         # RESOLVE PE
@@ -1819,7 +2447,6 @@ if page == "🏠 Dashboard":
 
             pe_contract = None
 
-
             if strike_mode == "ATM":
 
                 pe_contract = (
@@ -1830,7 +2457,6 @@ if page == "🏠 Dashboard":
                         fallback_lot_size=LOT_SIZE,
                     )
                 )
-
 
             if pe_contract is None:
 
@@ -1853,7 +2479,6 @@ if page == "🏠 Dashboard":
 
                     pe_contract = None
 
-
             if isinstance(
                 pe_contract,
                 dict,
@@ -1862,7 +2487,6 @@ if page == "🏠 Dashboard":
                 option_contract_by_option[
                     "PE"
                 ] = pe_contract
-
 
         # ====================================================
         # SELECTED CONTRACT
@@ -1878,7 +2502,6 @@ if page == "🏠 Dashboard":
                     option_mode
                 )
             )
-
 
         # ====================================================
         # FIND STRIKE
@@ -1921,7 +2544,6 @@ if page == "🏠 Dashboard":
                     )
                 )
 
-
         # ====================================================
         # FIND EXPIRY
         # ====================================================
@@ -1958,7 +2580,6 @@ if page == "🏠 Dashboard":
                     "expiry"
                 )
 
-
         # ====================================================
         # EXACT OPTION LTP
         #
@@ -1983,7 +2604,6 @@ if page == "🏠 Dashboard":
                     )
                 )
 
-
                 # ------------------------------------------------
                 # FALLBACK WITHOUT EXPIRY
                 #
@@ -2005,7 +2625,6 @@ if page == "🏠 Dashboard":
                         )
                     )
 
-
                 logging.info(
                     "EXACT OPTION RESULT | "
                     f"Index={index_name} | "
@@ -2015,7 +2634,6 @@ if page == "🏠 Dashboard":
                     f"Data={exact_option_data}"
                 )
 
-
             except Exception as e:
 
                 logging.exception(
@@ -2023,7 +2641,6 @@ if page == "🏠 Dashboard":
                 )
 
                 exact_option_data = None
-
 
         # ====================================================
         # READ OPTION PRICE
@@ -2041,13 +2658,11 @@ if page == "🏠 Dashboard":
                 )
             )
 
-
             if exact_strike_from_api <= 0:
 
                 exact_strike_from_api = (
                     exact_strike
                 )
-
 
             expiry_from_api = (
                 exact_option_data.get(
@@ -2056,14 +2671,12 @@ if page == "🏠 Dashboard":
                 )
             )
 
-
             ce_ltp_exact = safe_float(
                 exact_option_data.get(
                     "CE",
                     0,
                 )
             )
-
 
             pe_ltp_exact = safe_float(
                 exact_option_data.get(
@@ -2072,13 +2685,11 @@ if page == "🏠 Dashboard":
                 )
             )
 
-
             if ce_ltp_exact > 0:
 
                 price_by_option[
                     "CE"
                 ] = ce_ltp_exact
-
 
             if pe_ltp_exact > 0:
 
@@ -2140,7 +2751,6 @@ if page == "🏠 Dashboard":
 
                 return normalized
 
-
             ce_api_contract = _normalize_kotak_contract(
                 exact_option_data.get("CE_CONTRACT"),
                 "CE",
@@ -2151,12 +2761,10 @@ if page == "🏠 Dashboard":
                 "PE",
             )
 
-
             if ce_api_contract:
                 option_contract_by_option[
                     "CE"
                 ] = ce_api_contract
-
 
             if pe_api_contract:
                 option_contract_by_option[
@@ -2166,7 +2774,6 @@ if page == "🏠 Dashboard":
 # =================================================
 # UPDATE CE
 # =================================================
-
 
             # =================================================
             # UPDATE CE
@@ -2184,7 +2791,6 @@ if page == "🏠 Dashboard":
                     "strike"
                 ] = exact_strike_from_api
 
-
                 if (
                     not ce_contract.get(
                         "expiry"
@@ -2196,11 +2802,9 @@ if page == "🏠 Dashboard":
                         "expiry"
                     ] = expiry_from_api
 
-
                 ce_contract[
                     "ltp"
                 ] = ce_ltp_exact
-
 
             # =================================================
             # UPDATE PE
@@ -2218,7 +2822,6 @@ if page == "🏠 Dashboard":
                     "strike"
                 ] = exact_strike_from_api
 
-
                 if (
                     not pe_contract.get(
                         "expiry"
@@ -2230,11 +2833,9 @@ if page == "🏠 Dashboard":
                         "expiry"
                     ] = expiry_from_api
 
-
                 pe_contract[
                     "ltp"
                 ] = pe_ltp_exact
-
 
             # =================================================
             # SELECTED CONTRACT UPDATE
@@ -2251,7 +2852,6 @@ if page == "🏠 Dashboard":
                     )
                 )
 
-
         else:
 
             logging.warning(
@@ -2261,7 +2861,6 @@ if page == "🏠 Dashboard":
                 f"Strike={exact_strike}"
             )
 
-
     # ========================================================
     # SAVE OPTION DATA
     # ========================================================
@@ -2270,31 +2869,25 @@ if page == "🏠 Dashboard":
         "option_prices"
     ] = price_by_option
 
-
     st.session_state[
         "option_contracts"
     ] = option_contract_by_option
-
 
     st.session_state[
         "kotak_option_contracts"
     ] = option_contract_by_option
 
-
     st.session_state[
         "option_index"
     ] = index_name
-
 
     st.session_state[
         "option_mode"
     ] = option_mode
 
-
     st.session_state[
         "option_strike_mode"
     ] = strike_mode
-
 
     # ========================================================
     # OPTION CONTRACT DISPLAY
@@ -2310,7 +2903,6 @@ if page == "🏠 Dashboard":
         st.sidebar.subheader(
             "📦 Option Contract"
         )
-
 
         # ====================================================
         # ALL
@@ -2329,7 +2921,6 @@ if page == "🏠 Dashboard":
                     "PE"
                 )
             )
-
 
             if ce:
 
@@ -2383,7 +2974,6 @@ if page == "🏠 Dashboard":
                     "❌ CE Contract unavailable"
                 )
 
-
             if pe:
 
                 st.sidebar.success(
@@ -2435,7 +3025,6 @@ if page == "🏠 Dashboard":
                 st.sidebar.error(
                     "❌ PE Contract unavailable"
                 )
-
 
         # ====================================================
         # CE / PE
@@ -2498,7 +3087,6 @@ if page == "🏠 Dashboard":
                 "⚠️ Option contract unavailable."
             )
 
-
     # ========================================================
     # EXACT OPTION PRICE DISPLAY
     # ========================================================
@@ -2517,7 +3105,6 @@ if page == "🏠 Dashboard":
         )
     )
 
-
     if (
         market_type == "OPTIONS"
         and is_option_index
@@ -2528,7 +3115,6 @@ if page == "🏠 Dashboard":
         st.sidebar.subheader(
             "💰 Exact Option LTP"
         )
-
 
         if option_mode in [
             "CE",
@@ -2547,7 +3133,6 @@ if page == "🏠 Dashboard":
                     "⚠️ CE exact LTP unavailable"
                 )
 
-
         if option_mode in [
             "PE",
             "ALL",
@@ -2565,7 +3150,6 @@ if page == "🏠 Dashboard":
                     "⚠️ PE exact LTP unavailable"
                 )
 
-
     # ========================================================
     # SIGNAL
     # ========================================================
@@ -2581,11 +3165,9 @@ if page == "🏠 Dashboard":
         ),
     )
 
-
     signal = normalize_signal(
         raw_signal
     )
-
 
     # ========================================================
     # SIGNAL STRENGTH
@@ -2604,7 +3186,6 @@ if page == "🏠 Dashboard":
         )
     )
 
-
     # ========================================================
     # TRADE SYMBOL
     # ========================================================
@@ -2620,11 +3201,9 @@ if page == "🏠 Dashboard":
 
         trade_symbol = symbol
 
-
     st.session_state[
         "trade_symbol"
     ] = trade_symbol
-
 
     # ========================================================
     # MARKET STATUS FOR TRADE
@@ -2633,7 +3212,6 @@ if page == "🏠 Dashboard":
     trade_market_status = get_market_status(
         trade_symbol
     )
-
 
     # ========================================================
     # AUTO PAPER EXIT
@@ -2660,7 +3238,6 @@ if page == "🏠 Dashboard":
                         option_mode="CE",
                     )
 
-
                 if pe_ltp > 0:
 
                     trade_manager.check_position(
@@ -2668,7 +3245,6 @@ if page == "🏠 Dashboard":
                         symbol=trade_symbol,
                         option_mode="PE",
                     )
-
 
             elif (
                 market_type == "OPTIONS"
@@ -2693,7 +3269,6 @@ if page == "🏠 Dashboard":
                         option_mode=option_mode,
                     )
 
-
             else:
 
                 if current_price > 0:
@@ -2704,13 +3279,11 @@ if page == "🏠 Dashboard":
                         option_mode="N/A",
                     )
 
-
         except Exception as e:
 
             logging.exception(
                 f"Auto exit error: {e}"
             )
-
 
     # ========================================================
     # INDIAN MARKET CLOSE
@@ -2732,7 +3305,6 @@ if page == "🏠 Dashboard":
 
             close_price_map = {}
 
-
             if isinstance(
                 active_positions,
                 dict,
@@ -2749,7 +3321,6 @@ if page == "🏠 Dashboard":
                     ):
                         continue
 
-
                     pos_symbol = str(
                         position.get(
                             "symbol",
@@ -2757,14 +3328,12 @@ if page == "🏠 Dashboard":
                         )
                     )
 
-
                     pos_option = str(
                         position.get(
                             "option_mode",
                             "N/A",
                         )
                     ).strip().upper()
-
 
                     if pos_option == "CE":
 
@@ -2774,7 +3343,6 @@ if page == "🏠 Dashboard":
                                 position_key
                             ] = ce_ltp
 
-
                     elif pos_option == "PE":
 
                         if pe_ltp > 0:
@@ -2782,7 +3350,6 @@ if page == "🏠 Dashboard":
                             close_price_map[
                                 position_key
                             ] = pe_ltp
-
 
                     else:
 
@@ -2797,20 +3364,17 @@ if page == "🏠 Dashboard":
                                 position_key
                             ] = current_price
 
-
             if close_price_map:
 
                 trader.market_close_auto_exit(
                     price_map=close_price_map
                 )
 
-
     except Exception as e:
 
         logging.exception(
             f"Market close error: {e}"
         )
-
 
     # ========================================================
     # AUTO PAPER ENTRY
@@ -2843,7 +3407,6 @@ if page == "🏠 Dashboard":
                     "Indian market is closed/pre-market."
                 )
 
-
             # =================================================
             # OPTIONS ALL
             # =================================================
@@ -2866,7 +3429,6 @@ if page == "🏠 Dashboard":
                         0,
                     )
                 )
-
 
                 # =================================================
                 # BUY CE + PE
@@ -2900,7 +3462,6 @@ if page == "🏠 Dashboard":
                             )
                         )
 
-
                         try:
 
                             ce_position = (
@@ -2913,7 +3474,6 @@ if page == "🏠 Dashboard":
                         except Exception:
 
                             ce_position = None
-
 
                         if ce_position:
 
@@ -2958,7 +3518,6 @@ if page == "🏠 Dashboard":
                                 },
                             )
 
-
                             if ce_success:
 
                                 st.success(
@@ -2988,7 +3547,6 @@ if page == "🏠 Dashboard":
                             "CE exact LTP unavailable."
                         )
 
-
                     # ------------------------------------------------
                     # PE
                     # ------------------------------------------------
@@ -3015,7 +3573,6 @@ if page == "🏠 Dashboard":
                             )
                         )
 
-
                         try:
 
                             pe_position = (
@@ -3028,7 +3585,6 @@ if page == "🏠 Dashboard":
                         except Exception:
 
                             pe_position = None
-
 
                         if pe_position:
 
@@ -3073,7 +3629,6 @@ if page == "🏠 Dashboard":
                                 },
                             )
 
-
                             if pe_success:
 
                                 st.success(
@@ -3103,7 +3658,6 @@ if page == "🏠 Dashboard":
                             "PE exact LTP unavailable."
                         )
 
-
                 # =================================================
                 # SELL = EXIT ONLY
                 # =================================================
@@ -3129,7 +3683,6 @@ if page == "🏠 Dashboard":
 
                             ce_position = None
 
-
                         ce_contract = (
                             option_contract_by_option.get(
                                 "CE",
@@ -3149,7 +3702,6 @@ if page == "🏠 Dashboard":
                                 "expiry"
                             )
                         )
-
 
                         if ce_position:
 
@@ -3187,7 +3739,6 @@ if page == "🏠 Dashboard":
                                 },
                             )
 
-
                             if ce_success:
 
                                 st.success(
@@ -3214,7 +3765,6 @@ if page == "🏠 Dashboard":
                                 "No active CE BUY position."
                             )
 
-
                     # ------------------------------------------------
                     # PE EXIT
                     # ------------------------------------------------
@@ -3233,7 +3783,6 @@ if page == "🏠 Dashboard":
                         except Exception:
 
                             pe_position = None
-
 
                         pe_contract = (
                             option_contract_by_option.get(
@@ -3254,7 +3803,6 @@ if page == "🏠 Dashboard":
                                 "expiry"
                             )
                         )
-
 
                         if pe_position:
 
@@ -3292,7 +3840,6 @@ if page == "🏠 Dashboard":
                                 },
                             )
 
-
                             if pe_success:
 
                                 st.success(
@@ -3319,7 +3866,6 @@ if page == "🏠 Dashboard":
                                 "No active PE BUY position."
                             )
 
-
                     if (
                         ce_price <= 0
                         and pe_price <= 0
@@ -3329,7 +3875,6 @@ if page == "🏠 Dashboard":
                             "⛔ AUTO PAPER ALL EXIT blocked: "
                             "CE/PE exact LTP unavailable."
                         )
-
 
             # =================================================
             # OPTIONS CE / PE
@@ -3350,14 +3895,12 @@ if page == "🏠 Dashboard":
                     )
                 )
 
-
                 selected_contract = (
                     option_contract_by_option.get(
                         option_mode,
                         {},
                     )
                 )
-
 
                 selected_strike = safe_float(
                     selected_contract.get(
@@ -3366,13 +3909,11 @@ if page == "🏠 Dashboard":
                     )
                 )
 
-
                 selected_expiry = (
                     selected_contract.get(
                         "expiry"
                     )
                 )
-
 
                 if option_price <= 0:
 
@@ -3380,7 +3921,6 @@ if page == "🏠 Dashboard":
                         f"⛔ AUTO PAPER {option_mode} blocked: "
                         "exact option LTP unavailable."
                     )
-
 
                 # ------------------------------------------------
                 # BUY ONLY IF NO POSITION
@@ -3400,7 +3940,6 @@ if page == "🏠 Dashboard":
                     except Exception:
 
                         existing_position = None
-
 
                     if existing_position:
 
@@ -3445,7 +3984,6 @@ if page == "🏠 Dashboard":
                             },
                         )
 
-
                         if success:
 
                             st.success(
@@ -3463,7 +4001,6 @@ if page == "🏠 Dashboard":
                                 f"ℹ️ AUTO PAPER {option_mode}: "
                                 + str(result)
                             )
-
 
                 # ------------------------------------------------
                 # SELL = EXIT ONLY
@@ -3483,7 +4020,6 @@ if page == "🏠 Dashboard":
                     except Exception:
 
                         existing_position = None
-
 
                     if not existing_position:
 
@@ -3528,7 +4064,6 @@ if page == "🏠 Dashboard":
                             },
                         )
 
-
                         if success:
 
                             st.success(
@@ -3545,7 +4080,6 @@ if page == "🏠 Dashboard":
                                 f"{option_mode} EXIT: "
                                 + str(result)
                             )
-
 
             # =================================================
             # INDEX / STOCK / DELTA FUTURES
@@ -3581,7 +4115,6 @@ if page == "🏠 Dashboard":
                         lot_size=1,
                     )
 
-
                     if success:
 
                         st.success(
@@ -3596,7 +4129,6 @@ if page == "🏠 Dashboard":
                             + str(result)
                         )
 
-
         except Exception as e:
 
             logging.exception(
@@ -3606,7 +4138,6 @@ if page == "🏠 Dashboard":
             st.error(
                 f"❌ Auto Trade Error: {e}"
             )
-
 
     # ========================================================
     # OFFLINE PAPER OPTION TEST
@@ -3627,7 +4158,6 @@ if page == "🏠 Dashboard":
             "यह LIVE order नहीं भेजता."
         )
 
-
         with st.expander(
             "🧪 Open Paper Option Test",
             expanded=False,
@@ -3638,9 +4168,7 @@ if page == "🏠 Dashboard":
                 "NIFTY",
             )
 
-
             tc1, tc2, tc3 = st.columns(3)
-
 
             with tc1:
 
@@ -3652,7 +4180,6 @@ if page == "🏠 Dashboard":
                     ],
                     key="offline_test_option",
                 )
-
 
             with tc2:
 
@@ -3666,7 +4193,6 @@ if page == "🏠 Dashboard":
                     or 23400.0
                 )
 
-
                 test_strike = st.number_input(
                     "Test Strike",
                     min_value=1.0,
@@ -3676,7 +4202,6 @@ if page == "🏠 Dashboard":
                     step=50.0,
                     key="offline_test_strike",
                 )
-
 
             with tc3:
 
@@ -3691,9 +4216,7 @@ if page == "🏠 Dashboard":
                     key="offline_test_expiry",
                 )
 
-
             pc1, pc2, pc3 = st.columns(3)
-
 
             with pc1:
 
@@ -3705,7 +4228,6 @@ if page == "🏠 Dashboard":
                     key="offline_test_entry",
                 )
 
-
             with pc2:
 
                 test_ltp = st.number_input(
@@ -3715,7 +4237,6 @@ if page == "🏠 Dashboard":
                     step=1.0,
                     key="offline_test_ltp",
                 )
-
 
             with pc3:
 
@@ -3730,9 +4251,7 @@ if page == "🏠 Dashboard":
                     key="offline_test_qty",
                 )
 
-
             rc1, rc2, rc3 = st.columns(3)
-
 
             with rc1:
 
@@ -3745,7 +4264,6 @@ if page == "🏠 Dashboard":
                     key="offline_test_sl_pct",
                 )
 
-
             with rc2:
 
                 test_target_pct = st.number_input(
@@ -3757,7 +4275,6 @@ if page == "🏠 Dashboard":
                     key="offline_test_target_pct",
                 )
 
-
             with rc3:
 
                 test_trailing = st.checkbox(
@@ -3766,11 +4283,9 @@ if page == "🏠 Dashboard":
                     key="offline_test_trailing",
                 )
 
-
             test_symbol = (
                 f"PAPERTEST_{test_index}"
             )
-
 
             st.info(
                 f"Test Contract: {test_index} "
@@ -3778,7 +4293,6 @@ if page == "🏠 Dashboard":
                 f"Expiry: {test_expiry} | "
                 f"Qty: {int(test_qty)}"
             )
-
 
             try:
 
@@ -3792,7 +4306,6 @@ if page == "🏠 Dashboard":
             except Exception:
 
                 active_test_position = None
-
 
             if active_test_position:
 
@@ -3830,7 +4343,6 @@ if page == "🏠 Dashboard":
                     )
                 )
 
-
                 st.success(
                     f"🟢 ACTIVE {test_option} | "
                     f"Entry ₹{test_entry_live:,.2f} | "
@@ -3840,9 +4352,7 @@ if page == "🏠 Dashboard":
                     f"P&L ₹{test_pnl:,.2f}"
                 )
 
-
             b1, b2, b3 = st.columns(3)
-
 
             with b1:
 
@@ -3878,7 +4388,6 @@ if page == "🏠 Dashboard":
                                 test_target_pct
                             ) / 100.0
                         )
-
 
                         try:
 
@@ -3917,8 +4426,39 @@ if page == "🏠 Dashboard":
                                 },
                             )
 
-
                             if ok:
+
+                                # -------------------------------------------------
+                                # OFFLINE TEST: SYNC TEST LTP INTO PAPER POSITION
+                                # -------------------------------------------------
+
+                                try:
+                                    test_position = trader.get_position(
+                                        test_symbol,
+                                        test_option,
+                                    )
+
+                                    if isinstance(
+                                        test_position,
+                                        dict,
+                                    ):
+                                        test_ltp_value = safe_float(
+                                            test_ltp
+                                        )
+
+                                        if test_ltp_value > 0:
+                                            test_position[
+                                                "current_price"
+                                            ] = test_ltp_value
+
+                                            test_position[
+                                                "last_price"
+                                            ] = test_ltp_value
+
+                                except Exception:
+                                    logging.exception(
+                                        "Offline test LTP sync failed"
+                                    )
 
                                 st.success(
                                     f"🟢 PAPER {test_option} OPENED | "
@@ -3934,13 +4474,11 @@ if page == "🏠 Dashboard":
                                     f"❌ BUY failed: {result}"
                                 )
 
-
                         except Exception as e:
 
                             st.error(
                                 f"❌ Paper BUY error: {e}"
                             )
-
 
             with b2:
 
@@ -4004,7 +4542,6 @@ if page == "🏠 Dashboard":
                             ),
                         )
 
-
                         if ok:
 
                             st.success(
@@ -4019,20 +4556,17 @@ if page == "🏠 Dashboard":
                                 f"⚠️ EXIT: {result}"
                             )
 
-
                     except Exception as e:
 
                         st.error(
                             f"❌ Exit error: {e}"
                         )
 
-
             st.caption(
                 "Suggested test: BUY at ₹150 → "
                 "Current LTP ₹160 → CHECK SL/TARGET → "
                 "then SELL/EXIT."
             )
-
 
     # ========================================================
     # DETAILED DASHBOARD PAGE
@@ -4058,16 +4592,13 @@ if page == "🏠 Dashboard":
             detailed_dashboard_symbol = symbol
             detailed_trade_symbol = None
 
-
         st.session_state[
             "dashboard_symbol"
         ] = detailed_dashboard_symbol
 
-
         st.session_state[
             "selected_underlying_symbol"
         ] = symbol
-
 
         dashboard_page(
 
@@ -4086,7 +4617,6 @@ if page == "🏠 Dashboard":
             ),
         )
 
-
     except Exception as e:
 
         logging.exception(
@@ -4097,10 +4627,11 @@ if page == "🏠 Dashboard":
             f"❌ Dashboard Page Error: {e}"
         )
 
-
 # ============================================================
-# MARKET PAGE
+# DELTA ALL COINS PAGE
 # ============================================================
+elif page == "📊 Delta All Coins":
+    render_delta_all_coins()
 
 elif page == "📈 Market":
 
@@ -4135,13 +4666,11 @@ elif page == "📈 Market":
             ),
         )
 
-
     except Exception as e:
 
         st.error(
             f"❌ Market Page Error: {e}"
         )
-
 
 # ============================================================
 # TRADING PAGE
@@ -4161,7 +4690,6 @@ elif page == "💰 Trading":
         st.error(
             f"❌ Trading Page Error: {e}"
         )
-
 
 # ============================================================
 # PORTFOLIO PAGE
@@ -4196,7 +4724,6 @@ elif page == "📦 Portfolio":
             f"❌ Portfolio Error: {e}"
         )
 
-
 # ============================================================
 # REPORTS PAGE
 # ============================================================
@@ -4227,7 +4754,6 @@ elif page == "📊 Reports":
             f"❌ Reports Error: {e}"
         )
 
-
 # ============================================================
 # SETTINGS PAGE
 # ============================================================
@@ -4244,7 +4770,6 @@ elif page == "⚙ Settings":
             f"❌ Settings Error: {e}"
         )
 
-
 # ============================================================
 # AUTO REFRESH
 # ============================================================
@@ -4259,7 +4784,6 @@ try:
 except Exception:
 
     pass
-
 
 # ============================================================
 # FOOTER

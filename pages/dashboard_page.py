@@ -303,13 +303,21 @@ def get_active_positions(trader):
 
     return {}
 
-
 def get_position_ltp(
     position_symbol,
     active_symbol,
     display_price,
     entry,
+    trader=None,
+    position=None,
 ):
+    """
+    Return the correct LTP for a portfolio position.
+
+    IMPORTANT:
+    Indian OPTIONS positions must NEVER use the
+    underlying index/stock price as their LTP.
+    """
 
     position_symbol = str(
         position_symbol or ""
@@ -320,6 +328,170 @@ def get_position_ltp(
     ).strip().upper()
 
     entry = safe_float(entry)
+
+    position = (
+        position
+        if isinstance(position, dict)
+        else {}
+    )
+
+    # ---------------------------------------------------------
+    # 1. DETECT OPTION POSITION
+    # ---------------------------------------------------------
+
+    option_mode = str(
+        position.get(
+            "option_mode",
+            position.get(
+                "option_type",
+                ""
+            )
+        )
+        or ""
+    ).strip().upper()
+
+    option_contract = position.get(
+        "option_contract",
+        {}
+    )
+
+    if not option_mode and isinstance(
+        option_contract,
+        dict,
+    ):
+        option_mode = str(
+            option_contract.get(
+                "option_type",
+                ""
+            )
+            or ""
+        ).strip().upper()
+
+    is_option = (
+        option_mode in (
+            "CE",
+            "PE",
+        )
+        or "_CE_" in position_symbol
+        or "_PE_" in position_symbol
+    )
+
+    # ---------------------------------------------------------
+    # 2. OPTIONS: USE OPTION PREMIUM ONLY
+    # ---------------------------------------------------------
+
+    if is_option:
+
+        if option_mode not in (
+            "CE",
+            "PE",
+        ):
+            if "_CE_" in position_symbol:
+                option_mode = "CE"
+            elif "_PE_" in position_symbol:
+                option_mode = "PE"
+
+        # 2A. trader.price_by_option
+        if trader is not None:
+
+            price_by_option = getattr(
+                trader,
+                "price_by_option",
+                None,
+            )
+
+            if isinstance(
+                price_by_option,
+                dict,
+            ):
+                latest = safe_float(
+                    price_by_option.get(
+                        option_mode,
+                        0,
+                    )
+                )
+
+                if latest > 0:
+                    return latest
+
+        # 2B. trader.option_prices
+        if trader is not None:
+
+            option_prices = getattr(
+                trader,
+                "option_prices",
+                None,
+            )
+
+            if isinstance(
+                option_prices,
+                dict,
+            ):
+                latest = safe_float(
+                    option_prices.get(
+                        option_mode,
+                        0,
+                    )
+                )
+
+                if latest > 0:
+                    return latest
+
+        # 2C. trader.get_option_price()
+        if trader is not None:
+
+            get_option_price = getattr(
+                trader,
+                "get_option_price",
+                None,
+            )
+
+            if callable(
+                get_option_price
+            ) and option_mode in (
+                "CE",
+                "PE",
+            ):
+                try:
+
+                    latest = safe_float(
+                        get_option_price(
+                            option_mode
+                        )
+                    )
+
+                    if latest > 0:
+                        return latest
+
+                except Exception:
+                    pass
+
+        # 2D. Position-specific option LTP
+        for key in (
+            "option_ltp",
+            "ltp",
+            "LTP",
+            "last_price",
+            "last",
+            "current_option_price",
+        ):
+
+            latest = safe_float(
+                position.get(
+                    key,
+                    0,
+                )
+            )
+
+            if latest > 0:
+                return latest
+
+        # 2E. Safe fallback
+        return entry
+
+    # ---------------------------------------------------------
+    # 3. NORMAL STOCK / INDEX / DELTA POSITION
+    # ---------------------------------------------------------
 
     if position_symbol:
 
@@ -347,6 +519,10 @@ def get_position_ltp(
         except Exception:
             pass
 
+    # ---------------------------------------------------------
+    # 4. ACTIVE SYMBOL DISPLAY PRICE
+    # ---------------------------------------------------------
+
     if position_symbol == active_symbol:
 
         latest = safe_float(
@@ -355,6 +531,10 @@ def get_position_ltp(
 
         if latest > 0:
             return latest
+
+    # ---------------------------------------------------------
+    # 5. FINAL FALLBACK
+    # ---------------------------------------------------------
 
     return entry
 
@@ -683,6 +863,8 @@ def account_summary(
             active_symbol=active_symbol,
             display_price=current_price,
             entry=entry,
+            trader=trader,
+            position=position,
         )
 
         pnl = calculate_position_pnl(
@@ -2884,6 +3066,8 @@ def portfolio_section(
             active_symbol=active_symbol_upper,
             display_price=display_price,
             entry=entry,
+            trader=trader,
+            position=position,
         )
 
         pnl = calculate_position_pnl(

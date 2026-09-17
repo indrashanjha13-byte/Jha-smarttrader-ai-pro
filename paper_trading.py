@@ -266,7 +266,7 @@ class PaperTrader:
                 "N/A"
             ):
                 return False, (
-                    "❌ Invalid option mode. "
+                    "âŒ Invalid option mode. "
                     "Use CE, PE or N/A."
                 )
 
@@ -288,39 +288,39 @@ class PaperTrader:
             )
 
             if not symbol:
-                return False, "❌ Invalid symbol"
+                return False, "âŒ Invalid symbol"
 
             if price <= 0:
-                return False, "❌ Invalid entry price"
+                return False, "âŒ Invalid entry price"
 
             if qty <= 0:
-                return False, "❌ Invalid quantity"
+                return False, "âŒ Invalid quantity"
 
             if target <= price:
                 return False, (
-                    "❌ BUY target must be above entry"
+                    "âŒ BUY target must be above entry"
                 )
 
             if stoploss >= price:
                 return False, (
-                    "❌ BUY stoploss must be below entry"
+                    "âŒ BUY stoploss must be below entry"
                 )
 
             if trailing_enabled:
 
                 if trailing_start <= 0:
                     return False, (
-                        "❌ Invalid trailing start"
+                        "âŒ Invalid trailing start"
                     )
 
                 if trailing_distance <= 0:
                     return False, (
-                        "❌ Invalid trailing distance"
+                        "âŒ Invalid trailing distance"
                     )
 
                 if trailing_distance >= trailing_start:
                     return False, (
-                        "❌ Trailing distance must be "
+                        "âŒ Trailing distance must be "
                         "less than trailing start"
                     )
 
@@ -346,7 +346,7 @@ class PaperTrader:
             if position_key in self.positions:
 
                 return False, (
-                    f"⚠️ {symbol} {option_mode} "
+                    f"âš ï¸ {symbol} {option_mode} "
                     f"position already exists"
                 )
 
@@ -354,7 +354,7 @@ class PaperTrader:
 
             if cost > self.balance:
                 return False, (
-                    "❌ Insufficient Paper Trading Balance"
+                    "âŒ Insufficient Paper Trading Balance"
                 )
 
             self.balance -= cost
@@ -425,7 +425,7 @@ class PaperTrader:
             )
 
             logging.info(
-                f"🟢 PAPER BUY | "
+                f"ðŸŸ¢ PAPER BUY | "
                 f"{symbol} {option_mode} | "
                 f"Entry={price} | Qty={qty} | "
                 f"Target={target} | SL={stoploss}"
@@ -453,7 +453,7 @@ class PaperTrader:
         except Exception as e:
 
             logging.exception(
-                "❌ Paper Buy Error"
+                "âŒ Paper Buy Error"
             )
 
             return False, f"Error: {e}"
@@ -488,13 +488,13 @@ class PaperTrader:
 
             if not self.is_delta_symbol(symbol):
                 return False, (
-                    "❌ SHORT is supported "
+                    "âŒ SHORT is supported "
                     "only for Delta Futures"
                 )
 
             if option_mode != "N/A":
                 return False, (
-                    "❌ Delta Futures SHORT "
+                    "âŒ Delta Futures SHORT "
                     "must use option_mode=N/A"
                 )
 
@@ -517,35 +517,35 @@ class PaperTrader:
 
             if price <= 0:
                 return False, (
-                    "❌ Invalid short entry price"
+                    "âŒ Invalid short entry price"
                 )
 
             if qty <= 0:
                 return False, (
-                    "❌ Invalid quantity"
+                    "âŒ Invalid quantity"
                 )
 
             if target >= price:
                 return False, (
-                    "❌ SHORT target must be below entry"
+                    "âŒ SHORT target must be below entry"
                 )
 
             if stoploss <= price:
                 return False, (
-                    "❌ SHORT stoploss must be above entry"
+                    "âŒ SHORT stoploss must be above entry"
                 )
 
             if trailing_enabled:
 
                 if trailing_start <= 0:
-                    return False, "❌ Invalid trailing start"
+                    return False, "âŒ Invalid trailing start"
 
                 if trailing_distance <= 0:
-                    return False, "❌ Invalid trailing distance"
+                    return False, "âŒ Invalid trailing distance"
 
                 if trailing_distance >= trailing_start:
                     return False, (
-                        "❌ Trailing distance must be "
+                        "âŒ Trailing distance must be "
                         "less than trailing start"
                     )
 
@@ -556,14 +556,14 @@ class PaperTrader:
 
             if position_key in self.positions:
                 return False, (
-                    f"⚠️ {symbol} SHORT position already exists"
+                    f"âš ï¸ {symbol} SHORT position already exists"
                 )
 
             margin = price * qty
 
             if margin > self.balance:
                 return False, (
-                    "❌ Insufficient Paper Trading Balance"
+                    "âŒ Insufficient Paper Trading Balance"
                 )
 
             self.balance -= margin
@@ -630,7 +630,7 @@ class PaperTrader:
             )
 
             logging.info(
-                f"🔴 PAPER SHORT | "
+                f"ðŸ”´ PAPER SHORT | "
                 f"{symbol} | Entry={price} | "
                 f"Qty={qty} | Target={target} | SL={stoploss}"
             )
@@ -653,7 +653,7 @@ class PaperTrader:
         except Exception as e:
 
             logging.exception(
-                "❌ Paper Short Error"
+                "âŒ Paper Short Error"
             )
 
             return False, f"Error: {e}"
@@ -877,7 +877,7 @@ class PaperTrader:
         except Exception as e:
 
             logging.exception(
-                f"❌ Trailing Stop Error: {e}"
+                f"âŒ Trailing Stop Error: {e}"
             )
 
         return None
@@ -901,7 +901,7 @@ class PaperTrader:
             current_price = float(current_price)
 
             if current_price <= 0:
-                return False, "❌ Invalid exit price"
+                return False, "âŒ Invalid exit price"
 
             if symbol is not None:
 
@@ -922,7 +922,7 @@ class PaperTrader:
 
                 if position is None:
                     return False, (
-                        "❌ No Active Position Found"
+                        "âŒ No Active Position Found"
                     )
 
                 position_key = position.get(
@@ -943,7 +943,7 @@ class PaperTrader:
 
             if position is None:
                 return False, (
-                    "❌ No Active BUY/LONG Position Found"
+                    "âŒ No Active BUY/LONG Position Found"
                 )
 
             if position.get(
@@ -952,7 +952,7 @@ class PaperTrader:
             ) != "LONG":
 
                 return False, (
-                    "❌ This is a SHORT position. "
+                    "âŒ This is a SHORT position. "
                     "Use cover_short()."
                 )
 
@@ -1018,7 +1018,7 @@ class PaperTrader:
                 pass
 
             logging.info(
-                f"🔚 PAPER LONG EXIT | "
+                f"ðŸ”š PAPER LONG EXIT | "
                 f"{symbol} {option_mode} | "
                 f"Reason={exit_reason} | "
                 f"Entry={entry} | Exit={current_price} | "
@@ -1030,7 +1030,7 @@ class PaperTrader:
         except Exception as e:
 
             logging.exception(
-                "❌ Paper Long Exit Error"
+                "âŒ Paper Long Exit Error"
             )
 
             return False, str(e)
@@ -1054,7 +1054,7 @@ class PaperTrader:
             current_price = float(current_price)
 
             if current_price <= 0:
-                return False, "❌ Invalid cover price"
+                return False, "âŒ Invalid cover price"
 
             if symbol is not None:
 
@@ -1075,7 +1075,7 @@ class PaperTrader:
 
                 if position is None:
                     return False, (
-                        "❌ No Active SHORT Position Found"
+                        "âŒ No Active SHORT Position Found"
                     )
 
                 position_key = position.get(
@@ -1084,7 +1084,7 @@ class PaperTrader:
 
             if position is None:
                 return False, (
-                    "❌ No Active SHORT Position Found"
+                    "âŒ No Active SHORT Position Found"
                 )
 
             if position.get(
@@ -1092,7 +1092,7 @@ class PaperTrader:
             ) != "SHORT":
 
                 return False, (
-                    "❌ Position is not SHORT"
+                    "âŒ Position is not SHORT"
                 )
 
             symbol = position["symbol"]
@@ -1157,7 +1157,7 @@ class PaperTrader:
         except Exception as e:
 
             logging.exception(
-                "❌ Paper Short Cover Error"
+                "âŒ Paper Short Cover Error"
             )
 
             return False, str(e)
@@ -1271,7 +1271,7 @@ class PaperTrader:
                         return {
                             "status": "EXIT",
                             "reason": "TARGET",
-                            "message": "🎯 LONG Target Hit",
+                            "message": "ðŸŽ¯ LONG Target Hit",
                             "symbol": symbol,
                             "option_mode": option_mode,
                             "side": "LONG",
@@ -1301,9 +1301,9 @@ class PaperTrader:
                             "status": "EXIT",
                             "reason": reason,
                             "message": (
-                                "🔒 LONG Trailing Stoploss Hit"
+                                "ðŸ”’ LONG Trailing Stoploss Hit"
                                 if trailing_active
-                                else "🛑 LONG Stoploss Hit"
+                                else "ðŸ›‘ LONG Stoploss Hit"
                             ),
                             "symbol": symbol,
                             "option_mode": option_mode,
@@ -1327,7 +1327,7 @@ class PaperTrader:
                         return {
                             "status": "EXIT",
                             "reason": "TARGET",
-                            "message": "🎯 SHORT Target Hit",
+                            "message": "ðŸŽ¯ SHORT Target Hit",
                             "symbol": symbol,
                             "option_mode": option_mode,
                             "side": "SHORT",
@@ -1355,9 +1355,9 @@ class PaperTrader:
                             "status": "EXIT",
                             "reason": reason,
                             "message": (
-                                "🔒 SHORT Trailing Stoploss Hit"
+                                "ðŸ”’ SHORT Trailing Stoploss Hit"
                                 if trailing_active
-                                else "🛑 SHORT Stoploss Hit"
+                                else "ðŸ›‘ SHORT Stoploss Hit"
                             ),
                             "symbol": symbol,
                             "option_mode": option_mode,
@@ -1368,7 +1368,8 @@ class PaperTrader:
         except Exception as e:
 
             logging.exception(
-                f"❌ Auto Exit Error: {e}"
+                "PaperTrader.auto_exit failed: %s",
+                e
             )
 
         return None
@@ -1556,7 +1557,7 @@ class PaperTrader:
         except Exception as e:
 
             logging.exception(
-                f"❌ Market Close Exit Error: {e}"
+                f"âŒ Market Close Exit Error: {e}"
             )
 
             return {
@@ -1774,7 +1775,7 @@ class PaperTrader:
         except Exception as e:
 
             logging.exception(
-                f"❌ Open P&L Error: {e}"
+                f"âŒ Open P&L Error: {e}"
             )
 
         return round(total_pnl, 2)
@@ -1851,7 +1852,7 @@ class PaperTrader:
         except Exception as e:
 
             logging.error(
-                f"❌ Failed to save trade history: {e}"
+                f"âŒ Failed to save trade history: {e}"
             )
 
 
