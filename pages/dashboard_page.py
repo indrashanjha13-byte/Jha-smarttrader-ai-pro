@@ -827,16 +827,7 @@ def account_summary(
             break
 
     if position is None:
-
-        for candidate in active_positions.values():
-
-            if isinstance(
-                candidate,
-                dict,
-            ):
-
-                position = candidate
-                break
+        position = None
 
     if position:
 
@@ -2971,8 +2962,36 @@ def portfolio_section(
     )
 
     active_positions = get_active_positions(
+
         trader
     )
+
+    selected_symbol = str(
+        active_symbol or ""
+    ).strip().upper()
+
+    filtered_positions = {}
+
+    for position_key, position in (
+        active_positions or {}
+    ).items():
+
+        if not isinstance(position, dict):
+            continue
+
+        position_symbol = str(
+            position.get(
+                "symbol",
+                ""
+            )
+        ).strip().upper()
+
+        if position_symbol == selected_symbol:
+            filtered_positions[
+                position_key
+            ] = position
+
+    active_positions = filtered_positions
 
     if not active_positions:
 

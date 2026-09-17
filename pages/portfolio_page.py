@@ -250,8 +250,35 @@ def live_position(trader, symbol):
 
     positions = get_active_positions(trader)
 
+    selected_symbol = str(
+        symbol or ""
+    ).strip().upper()
+
+    filtered_positions = []
+
+    for position in positions or []:
+
+        if not isinstance(position, dict):
+            continue
+
+        position_symbol = str(
+            position.get(
+                "symbol",
+                ""
+            )
+        ).strip().upper()
+
+        if position_symbol == selected_symbol:
+            filtered_positions.append(
+                position
+            )
+
+    positions = filtered_positions
+
     if not positions:
-        st.info("No Open Position")
+        st.info(
+            f"No Open Position for {selected_symbol}"
+        )
         return
 
     rows = []
@@ -399,22 +426,46 @@ def live_position(trader, symbol):
 # Holdings
 # ============================================================
 
-def holdings(trader):
+def holdings(trader, symbol):
 
     st.header("💼 Holdings")
 
     positions = get_active_positions(trader)
 
+    selected_symbol = str(
+        symbol or ""
+    ).strip().upper()
+
+    filtered_positions = []
+
+    for position in positions or []:
+
+        if not isinstance(position, dict):
+            continue
+
+        position_symbol = str(
+            position.get(
+                "symbol",
+                ""
+            )
+        ).strip().upper()
+
+        if position_symbol == selected_symbol:
+            filtered_positions.append(
+                position
+            )
+
+    positions = filtered_positions
+
     if not positions:
-        st.info("No Holdings")
+        st.info(
+            f"No Holdings for {selected_symbol}"
+        )
         return
 
     rows = []
 
     for position in positions:
-
-        if not isinstance(position, dict):
-            continue
 
         rows.append(
             {
@@ -449,13 +500,17 @@ def holdings(trader):
         )
 
     if rows:
+
         st.dataframe(
             pd.DataFrame(rows),
             use_container_width=True,
             hide_index=True,
         )
+
     else:
-        st.info("No Holdings")
+        st.info(
+            f"No Holdings for {selected_symbol}"
+        )
 
 
 # ============================================================
@@ -997,7 +1052,8 @@ def portfolio_page(trader, symbol):
     st.divider()
 
     holdings(
-        trader
+        trader,
+        symbol
     )
 
     st.divider()
