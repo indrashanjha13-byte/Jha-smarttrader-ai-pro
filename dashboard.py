@@ -19,7 +19,7 @@ from streamlit_autorefresh import st_autorefresh
 # ============================================================
 
 from signals import get_signals
-
+from ai_decision import ai_decision
 from paper_trading import PaperTrader
 from trade_manager import TradeManager
 from backtest_engine import BacktestEngine
@@ -2293,15 +2293,145 @@ if page == "🏠 Dashboard":
         signal_data = {
             "error": str(e)
         }
-
     if not isinstance(
         signal_data,
         dict,
     ):
 
-        signal_data = {
-            "error": "Invalid signal response"
+            signal_data = {
+                "error": "Invalid signal response"
         }
+
+    # ========================================================
+    # AI DECISION
+    # ========================================================
+
+    ai_result = {
+        "decision": "HOLD",
+        "score": 0,
+        "confidence": 0.0,
+        "volume_confirmed": False,
+    }
+
+    if not signal_data.get("error"):
+
+        try:
+
+            ai_result = ai_decision(
+                rsi=signal_data.get(
+                    "RSI",
+                    50.0,
+                ),
+
+                macd=signal_data.get(
+                    "MACD",
+                    0.0,
+                ),
+
+                macd_signal=signal_data.get(
+                    "MACD_SIGNAL",
+                    0.0,
+                ),
+
+                ema9=signal_data.get(
+                    "EMA9",
+                    0.0,
+                ),
+
+                ema21=signal_data.get(
+                    "EMA21",
+                    0.0,
+                ),
+
+                supertrend=signal_data.get(
+                    "ST_DIRECTION",
+                    0.0,
+                ),
+
+                volume=signal_data.get(
+                    "Volume",
+                    0.0,
+                ),
+
+                avg_volume=signal_data.get(
+                    "AVG_VOLUME",
+                    0.0,
+                ),
+            )
+
+        except Exception as e:
+
+            logging.exception(
+                "AI decision calculation failed"
+            )
+
+            ai_result = {
+                "decision": "HOLD",
+                "score": 0,
+                "confidence": 0.0,
+                "volume_confirmed": False,
+            }
+
+    ai_decision_value = str(
+        ai_result.get(
+            "decision",
+            "HOLD",
+        )
+    ).upper()
+
+    ai_score = safe_float(
+        ai_result.get(
+            "score",
+            0,
+        )
+    )
+
+    ai_confidence = safe_float(
+        ai_result.get(
+            "confidence",
+            0,
+        )
+    )
+
+    ai_volume_confirmed = bool(
+        ai_result.get(
+            "volume_confirmed",
+            False,
+        )
+    )
+
+    signal_data[
+        "AI_DECISION"
+    ] = ai_decision_value
+
+    signal_data[
+        "AI_SCORE"
+    ] = ai_score
+
+    signal_data[
+        "AI_CONFIDENCE"
+    ] = ai_confidence
+
+    signal_data[
+        "AI_VOLUME_CONFIRMED"
+    ] = ai_volume_confirmed
+
+    st.session_state[
+        "ai_decision"
+    ] = ai_decision_value
+
+    st.session_state[
+        "ai_score"
+    ] = ai_score
+
+    st.session_state[
+        "ai_confidence"
+    ] = ai_confidence
+
+    st.session_state[
+        "ai_volume_confirmed"
+    ] = ai_volume_confirmed
+
 
     # ========================================================
     # PRICE
@@ -2771,10 +2901,6 @@ if page == "🏠 Dashboard":
                     "PE"
             ] = pe_api_contract
 
-# =================================================
-# UPDATE CE
-# =================================================
-
             # =================================================
             # UPDATE CE
             # =================================================
@@ -3168,24 +3294,54 @@ if page == "🏠 Dashboard":
     signal = normalize_signal(
         raw_signal
     )
+    # ========================================================
+    # AI SIGNAL OVERRIDE
+    # ========================================================
+
+    ai_trade_signal = normalize_signal(
+        signal_data.get(
+            "AI_DECISION",
+            "HOLD",
+        )
+    )
+
+    ai_trade_confidence = safe_float(
+        signal_data.get(
+            "AI_CONFIDENCE",
+            0,
+        )
+    )
+
+    if ai_trade_signal in [
+        "BUY",
+        "SELL",
+    ]:
+
+        signal = ai_trade_signal
+
+    else:
+
+        signal = "HOLD"
 
     # ========================================================
-    # SIGNAL STRENGTH
+    # SIGNAL STRENGTH / AI CONFIDENCE
     # ========================================================
 
     signal_strength = safe_float(
         signal_data.get(
-            "Signal_Strength",
+            "AI_CONFIDENCE",
             signal_data.get(
-                "Strength",
+                "Signal_Strength",
                 signal_data.get(
-                    "Confidence",
-                    0,
+                    "Strength",
+                    signal_data.get(
+                        "Confidence",
+                        0,
+                    ),
                 ),
             ),
         )
     )
-
     # ========================================================
     # TRADE SYMBOL
     # ========================================================
@@ -3211,6 +3367,16 @@ if page == "🏠 Dashboard":
 
     trade_market_status = get_market_status(
         trade_symbol
+    )
+
+    # ========================================================
+    # AI CONFIDENCE GATE
+    # ========================================================
+
+    MIN_AUTO_CONFIDENCE = 70.0
+
+    auto_confidence_ok = (
+        signal_strength >= MIN_AUTO_CONFIDENCE
     )
 
     # ========================================================
@@ -3409,6 +3575,12 @@ if page == "🏠 Dashboard":
 
             # =================================================
             # OPTIONS ALL
+            # AI DIRECTIONAL OPTION MODE
+            #
+            # BUY  -> CE BUY
+            # SELL -> PE BUY
+            #
+            # ALL does NOT buy CE + PE together.
             # =================================================
 
             elif (
@@ -3416,465 +3588,226 @@ if page == "🏠 Dashboard":
                 and option_mode == "ALL"
             ):
 
-                ce_price = safe_float(
-                    price_by_option.get(
-                        "CE",
-                        0,
-                    )
-                )
-
-                pe_price = safe_float(
-                    price_by_option.get(
-                        "PE",
-                        0,
-                    )
-                )
-
-                # =================================================
-                # BUY CE + PE
-                # =================================================
+                # -------------------------------------------------
+                # AI SIGNAL → OPTION DIRECTION
+                # -------------------------------------------------
 
                 if signal == "BUY":
 
-                    # ------------------------------------------------
-                    # CE
-                    # ------------------------------------------------
-
-                    if ce_price > 0:
-
-                        ce_contract = (
-                            option_contract_by_option.get(
-                                "CE",
-                                {},
-                            )
-                        )
-
-                        ce_strike = safe_float(
-                            ce_contract.get(
-                                "strike",
-                                0,
-                            )
-                        )
-
-                        ce_expiry = (
-                            ce_contract.get(
-                                "expiry"
-                            )
-                        )
-
-                        try:
-
-                            ce_position = (
-                                trader.get_position(
-                                    trade_symbol,
-                                    "CE",
-                                )
-                            )
-
-                        except Exception:
-
-                            ce_position = None
-
-                        if ce_position:
-
-                            st.info(
-                                "ℹ️ AUTO PAPER ALL: "
-                                "CE position already active."
-                            )
-
-                        else:
-
-                            (
-                                ce_success,
-                                ce_result,
-                            ) = process_trade_compatible(
-
-                                symbol=trade_symbol,
-
-                                signal="BUY",
-
-                                current_price=ce_price,
-
-                                capital=trader.balance,
-
-                                option_mode="CE",
-
-                                lots=int(
-                                    selected_lots
-                                ),
-
-                                lot_size=int(
-                                    LOT_SIZE
-                                ),
-
-                                strike=ce_strike,
-
-                                expiry=ce_expiry,
-
-                                option_type="CE",
-
-                                price_by_option={
-                                    "CE": ce_price
-                                },
-                            )
-
-                            if ce_success:
-
-                                st.success(
-                                    "🟢 AUTO PAPER ALL → "
-                                    "CE BUY | "
-                                    f"Strike {ce_strike:g} | "
-                                    f"LTP ₹{ce_price:,.2f} | "
-                                    f"Expiry {ce_expiry} | "
-                                    + str(
-                                        ce_result
-                                    )
-                                )
-
-                            else:
-
-                                st.info(
-                                    "ℹ️ AUTO PAPER ALL → CE: "
-                                    + str(
-                                        ce_result
-                                    )
-                                )
-
-                    else:
-
-                        st.warning(
-                            "⛔ AUTO PAPER ALL: "
-                            "CE exact LTP unavailable."
-                        )
-
-                    # ------------------------------------------------
-                    # PE
-                    # ------------------------------------------------
-
-                    if pe_price > 0:
-
-                        pe_contract = (
-                            option_contract_by_option.get(
-                                "PE",
-                                {},
-                            )
-                        )
-
-                        pe_strike = safe_float(
-                            pe_contract.get(
-                                "strike",
-                                0,
-                            )
-                        )
-
-                        pe_expiry = (
-                            pe_contract.get(
-                                "expiry"
-                            )
-                        )
-
-                        try:
-
-                            pe_position = (
-                                trader.get_position(
-                                    trade_symbol,
-                                    "PE",
-                                )
-                            )
-
-                        except Exception:
-
-                            pe_position = None
-
-                        if pe_position:
-
-                            st.info(
-                                "ℹ️ AUTO PAPER ALL: "
-                                "PE position already active."
-                            )
-
-                        else:
-
-                            (
-                                pe_success,
-                                pe_result,
-                            ) = process_trade_compatible(
-
-                                symbol=trade_symbol,
-
-                                signal="BUY",
-
-                                current_price=pe_price,
-
-                                capital=trader.balance,
-
-                                option_mode="PE",
-
-                                lots=int(
-                                    selected_lots
-                                ),
-
-                                lot_size=int(
-                                    LOT_SIZE
-                                ),
-
-                                strike=pe_strike,
-
-                                expiry=pe_expiry,
-
-                                option_type="PE",
-
-                                price_by_option={
-                                    "PE": pe_price
-                                },
-                            )
-
-                            if pe_success:
-
-                                st.success(
-                                    "🔴 AUTO PAPER ALL → "
-                                    "PE BUY | "
-                                    f"Strike {pe_strike:g} | "
-                                    f"LTP ₹{pe_price:,.2f} | "
-                                    f"Expiry {pe_expiry} | "
-                                    + str(
-                                        pe_result
-                                    )
-                                )
-
-                            else:
-
-                                st.info(
-                                    "ℹ️ AUTO PAPER ALL → PE: "
-                                    + str(
-                                        pe_result
-                                    )
-                                )
-
-                    else:
-
-                        st.warning(
-                            "⛔ AUTO PAPER ALL: "
-                            "PE exact LTP unavailable."
-                        )
-
-                # =================================================
-                # SELL = EXIT ONLY
-                # =================================================
+                    ai_option = "CE"
+                    direction_text = "🟢 BULLISH → CE BUY"
 
                 elif signal == "SELL":
 
-                    # ------------------------------------------------
-                    # CE EXIT
-                    # ------------------------------------------------
+                    ai_option = "PE"
+                    direction_text = "🔴 BEARISH → PE BUY"
 
-                    if ce_price > 0:
+                else:
 
-                        try:
+                    ai_option = None
+                    direction_text = ""
 
-                            ce_position = (
-                                trader.get_position(
-                                    trade_symbol,
-                                    "CE",
-                                )
-                            )
+                # -------------------------------------------------
+                # AI CONFIDENCE CHECK
+                # -------------------------------------------------
 
-                        except Exception:
+                if not auto_confidence_ok:
 
-                            ce_position = None
+                    st.info(
+                        "ℹ️ AUTO PAPER ALL blocked: "
+                        f"AI confidence {signal_strength:.1f}% "
+                        f"< {MIN_AUTO_CONFIDENCE:.0f}%."
+                    )
 
-                        ce_contract = (
-                            option_contract_by_option.get(
-                                "CE",
-                                {},
-                            )
+                # -------------------------------------------------
+                # HOLD / UNKNOWN → NO ENTRY
+                # -------------------------------------------------
+
+                elif ai_option is None:
+
+                    st.info(
+                        "ℹ️ AUTO PAPER ALL: "
+                        f"Signal={signal}. No option entry."
+                    )
+
+                else:
+
+                    # -------------------------------------------------
+                    # GET EXACT OPTION LTP
+                    # -------------------------------------------------
+
+                    option_price = safe_float(
+                        price_by_option.get(
+                            ai_option,
+                            0,
                         )
+                    )
 
-                        ce_strike = safe_float(
-                            ce_contract.get(
-                                "strike",
-                                0,
-                            )
+                    # -------------------------------------------------
+                    # GET OPTION CONTRACT
+                    # -------------------------------------------------
+
+                    selected_contract = (
+                        option_contract_by_option.get(
+                            ai_option,
+                            {},
                         )
+                    )
 
-                        ce_expiry = (
-                            ce_contract.get(
-                                "expiry"
-                            )
+                    selected_strike = safe_float(
+                        selected_contract.get(
+                            "strike",
+                            0,
                         )
+                    )
 
-                        if ce_position:
-
-                            (
-                                ce_success,
-                                ce_result,
-                            ) = process_trade_compatible(
-
-                                symbol=trade_symbol,
-
-                                signal="SELL",
-
-                                current_price=ce_price,
-
-                                capital=trader.balance,
-
-                                option_mode="CE",
-
-                                lots=int(
-                                    selected_lots
-                                ),
-
-                                lot_size=int(
-                                    LOT_SIZE
-                                ),
-
-                                strike=ce_strike,
-
-                                expiry=ce_expiry,
-
-                                option_type="CE",
-
-                                price_by_option={
-                                    "CE": ce_price
-                                },
-                            )
-
-                            if ce_success:
-
-                                st.success(
-                                    "🔴 AUTO PAPER ALL → "
-                                    "CE EXIT: "
-                                    + str(
-                                        ce_result
-                                    )
-                                )
-
-                            else:
-
-                                st.info(
-                                    "ℹ️ CE EXIT: "
-                                    + str(
-                                        ce_result
-                                    )
-                                )
-
-                        else:
-
-                            st.info(
-                                "ℹ️ AUTO PAPER ALL: "
-                                "No active CE BUY position."
-                            )
-
-                    # ------------------------------------------------
-                    # PE EXIT
-                    # ------------------------------------------------
-
-                    if pe_price > 0:
-
-                        try:
-
-                            pe_position = (
-                                trader.get_position(
-                                    trade_symbol,
-                                    "PE",
-                                )
-                            )
-
-                        except Exception:
-
-                            pe_position = None
-
-                        pe_contract = (
-                            option_contract_by_option.get(
-                                "PE",
-                                {},
-                            )
+                    selected_expiry = (
+                        selected_contract.get(
+                            "expiry"
                         )
+                    )
 
-                        pe_strike = safe_float(
-                            pe_contract.get(
-                                "strike",
-                                0,
-                            )
-                        )
+                    # -------------------------------------------------
+                    # LTP VALIDATION
+                    # -------------------------------------------------
 
-                        pe_expiry = (
-                            pe_contract.get(
-                                "expiry"
-                            )
-                        )
-
-                        if pe_position:
-
-                            (
-                                pe_success,
-                                pe_result,
-                            ) = process_trade_compatible(
-
-                                symbol=trade_symbol,
-
-                                signal="SELL",
-
-                                current_price=pe_price,
-
-                                capital=trader.balance,
-
-                                option_mode="PE",
-
-                                lots=int(
-                                    selected_lots
-                                ),
-
-                                lot_size=int(
-                                    LOT_SIZE
-                                ),
-
-                                strike=pe_strike,
-
-                                expiry=pe_expiry,
-
-                                option_type="PE",
-
-                                price_by_option={
-                                    "PE": pe_price
-                                },
-                            )
-
-                            if pe_success:
-
-                                st.success(
-                                    "🔴 AUTO PAPER ALL → "
-                                    "PE EXIT: "
-                                    + str(
-                                        pe_result
-                                    )
-                                )
-
-                            else:
-
-                                st.info(
-                                    "ℹ️ PE EXIT: "
-                                    + str(
-                                        pe_result
-                                    )
-                                )
-
-                        else:
-
-                            st.info(
-                                "ℹ️ AUTO PAPER ALL: "
-                                "No active PE BUY position."
-                            )
-
-                    if (
-                        ce_price <= 0
-                        and pe_price <= 0
-                    ):
+                    if option_price <= 0:
 
                         st.warning(
-                            "⛔ AUTO PAPER ALL EXIT blocked: "
-                            "CE/PE exact LTP unavailable."
+                            "⛔ AUTO PAPER ALL blocked: "
+                            f"{ai_option} exact LTP unavailable."
                         )
+
+                    # -------------------------------------------------
+                    # STRIKE VALIDATION
+                    # -------------------------------------------------
+
+                    elif selected_strike <= 0:
+
+                        st.warning(
+                            "⛔ AUTO PAPER ALL blocked: "
+                            f"{ai_option} strike unavailable."
+                        )
+
+                    # -------------------------------------------------
+                    # EXPIRY VALIDATION
+                    # -------------------------------------------------
+
+                    elif not selected_expiry:
+
+                        st.warning(
+                            "⛔ AUTO PAPER ALL blocked: "
+                            f"{ai_option} expiry unavailable."
+                        )
+
+                    else:
+
+                        # -------------------------------------------------
+                        # EXISTING POSITION CHECK
+                        # -------------------------------------------------
+
+                        try:
+
+                            existing_position = (
+                                trader.get_position(
+                                    trade_symbol,
+                                    ai_option,
+                                )
+                            )
+
+                        except Exception:
+
+                            existing_position = None
+
+                        # -------------------------------------------------
+                        # DUPLICATE ENTRY BLOCK
+                        # -------------------------------------------------
+
+                        if existing_position:
+
+                            st.info(
+                                "ℹ️ AUTO PAPER ALL: "
+                                f"{ai_option} position already active. "
+                                "Duplicate entry blocked."
+                            )
+
+                        else:
+
+                            # -------------------------------------------------
+                            # OPTION BUY
+                            #
+                            # IMPORTANT:
+                            # Even when AI signal = SELL,
+                            # we BUY the PE option.
+                            #
+                            # Therefore actual transaction signal
+                            # remains BUY.
+                            # -------------------------------------------------
+
+                            (
+                                success,
+                                result,
+                            ) = process_trade_compatible(
+
+                                symbol=trade_symbol,
+
+                                signal="BUY",
+
+                                current_price=option_price,
+
+                                capital=trader.balance,
+
+                                option_mode=ai_option,
+
+                                lots=int(
+                                    selected_lots
+                                ),
+
+                                lot_size=int(
+                                    LOT_SIZE
+                                ),
+
+                                strike=selected_strike,
+
+                                expiry=selected_expiry,
+
+                                option_type=ai_option,
+
+                                price_by_option={
+                                    ai_option: option_price
+                                },
+                            )
+
+                            # -------------------------------------------------
+                            # SUCCESS
+                            # -------------------------------------------------
+
+                            if success:
+
+                                st.success(
+                                    "🤖 AUTO PAPER ALL | "
+                                    f"{direction_text} | "
+                                    f"Strike {selected_strike:g} | "
+                                    f"LTP ₹{option_price:,.2f} | "
+                                    f"Expiry {selected_expiry} | "
+                                    + str(
+                                        result
+                                    )
+                                )
+
+                            # -------------------------------------------------
+                            # FAILED
+                            # -------------------------------------------------
+
+                            else:
+
+                                st.info(
+                                    "ℹ️ AUTO PAPER ALL "
+                                    f"{ai_option} ENTRY: "
+                                    + str(
+                                        result
+                                    )
+                                )
 
             # =================================================
             # OPTIONS CE / PE
@@ -3922,85 +3855,107 @@ if page == "🏠 Dashboard":
                         "exact option LTP unavailable."
                     )
 
+                elif selected_strike <= 0:
+
+                    st.warning(
+                        f"⚠️ AUTO PAPER {option_mode} blocked: "
+                        "strike unavailable."
+                    )
+
+                elif not selected_expiry:
+
+                    st.warning(
+                        f"⚠️ AUTO PAPER {option_mode} blocked: "
+                        "expiry unavailable."
+                    )
                 # ------------------------------------------------
                 # BUY ONLY IF NO POSITION
                 # ------------------------------------------------
 
                 elif signal == "BUY":
 
-                    try:
-
-                        existing_position = (
-                            trader.get_position(
-                                trade_symbol,
-                                option_mode,
-                            )
-                        )
-
-                    except Exception:
-
-                        existing_position = None
-
-                    if existing_position:
+                    if not auto_confidence_ok:
 
                         st.info(
-                            f"ℹ️ AUTO PAPER {option_mode}: "
-                            "Position already active."
+                            f"ℹ️ AUTO PAPER {option_mode} BUY blocked: "
+                            f"AI confidence {signal_strength:.1f}% "
+                            f"< {MIN_AUTO_CONFIDENCE:.0f}%."
                         )
 
                     else:
 
-                        (
-                            success,
-                            result,
-                        ) = process_trade_compatible(
+                        try:
 
-                            symbol=trade_symbol,
-
-                            signal="BUY",
-
-                            current_price=option_price,
-
-                            capital=trader.balance,
-
-                            option_mode=option_mode,
-
-                            lots=int(
-                                selected_lots
-                            ),
-
-                            lot_size=int(
-                                LOT_SIZE
-                            ),
-
-                            strike=selected_strike,
-
-                            expiry=selected_expiry,
-
-                            option_type=option_mode,
-
-                            price_by_option={
-                                option_mode: option_price
-                            },
-                        )
-
-                        if success:
-
-                            st.success(
-                                "🤖 AUTO PAPER "
-                                f"{option_mode} BUY | "
-                                f"Strike {selected_strike:g} | "
-                                f"LTP ₹{option_price:,.2f} | "
-                                f"Expiry {selected_expiry} | "
-                                + str(result)
+                            existing_position = (
+                                trader.get_position(
+                                    trade_symbol,
+                                    option_mode,
+                                )
                             )
 
-                        else:
+                        except Exception:
+
+                            existing_position = None
+
+                        if existing_position:
 
                             st.info(
                                 f"ℹ️ AUTO PAPER {option_mode}: "
-                                + str(result)
+                                "Position already active."
                             )
+
+                        else:
+                            (
+                                success,
+                                result,
+                            ) = process_trade_compatible(
+
+                                symbol=trade_symbol,
+
+                                signal="BUY",
+
+                                current_price=option_price,
+
+                                capital=trader.balance,
+
+                                option_mode=option_mode,
+
+                                lots=int(
+                                    selected_lots
+                                ),
+
+                                lot_size=int(
+                                    LOT_SIZE
+                                ),
+
+                                strike=selected_strike,
+
+                                expiry=selected_expiry,
+
+                                option_type=option_mode,
+
+                                price_by_option={
+                                    option_mode: option_price
+                                },
+                            )
+
+                            if success:
+
+                                st.success(
+                                    "🤖 AUTO PAPER "
+                                    f"{option_mode} BUY | "
+                                    f"Strike {selected_strike:g} | "
+                                    f"LTP ₹{option_price:,.2f} | "
+                                    f"Expiry {selected_expiry} | "
+                                    + str(result)
+                                )
+
+                            else:
+
+                                st.info(
+                                    f"ℹ️ AUTO PAPER {option_mode}: "
+                                    + str(result)
+                                )
 
                 # ------------------------------------------------
                 # SELL = EXIT ONLY
@@ -4093,6 +4048,21 @@ if page == "🏠 Dashboard":
                         "⚠️ Current market price unavailable."
                     )
 
+                # -------------------------------------------------
+                # BUY ENTRY → AI CONFIDENCE REQUIRED
+                # -------------------------------------------------
+
+                elif (
+                    signal == "BUY"
+                    and not auto_confidence_ok
+                ):
+
+                    st.info(
+                        "ℹ️ AUTO PAPER BUY blocked: "
+                        f"AI confidence {signal_strength:.1f}% "
+                        f"< {MIN_AUTO_CONFIDENCE:.0f}%."
+                    )
+
                 else:
 
                     (
@@ -4128,7 +4098,6 @@ if page == "🏠 Dashboard":
                             "ℹ️ Trade: "
                             + str(result)
                         )
-
         except Exception as e:
 
             logging.exception(
@@ -4683,6 +4652,7 @@ elif page == "💰 Trading":
         trading_page(
             trader=trader,
             symbol=symbol,
+            default_quantity=int(quantity),
         )
 
     except Exception as e:

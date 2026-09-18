@@ -7,7 +7,7 @@ import logging
 from signals import get_signals
 from settings_manager import load_settings, save_settings
 from paper_trading import PaperTrader
-
+from option_contracts import get_lot_size
 from auto_mode import is_enabled
 from auto_trader import place_trade
 
@@ -316,7 +316,8 @@ def sync_auto_exit_to_paper_trades(
 
 def trading_page(
     trader=None,
-    symbol=None
+    symbol=None,
+    default_quantity=1
 ):
 
     settings = load_settings()
@@ -793,11 +794,25 @@ def trading_page(
     # QUANTITY
     # =====================================================
 
+    try:
+        default_quantity = int(default_quantity)
+    except Exception:
+        default_quantity = 1
+
+    if default_quantity < 1:
+        default_quantity = 1
+
     quantity = st.number_input(
         "Quantity",
         min_value=1,
-        value=1,
-        step=1
+        value=default_quantity,
+        step=default_quantity,
+        key=f"trading_quantity_{symbol}"
+    )
+
+    st.caption(
+        f"📦 {symbol} | "
+        f"Default Quantity: {default_quantity}"
     )
 
     # =====================================================
