@@ -81,26 +81,24 @@ class TradeManager:
 
         s = str(symbol or "").strip().upper()
 
-        delta_symbols = {
-            "BTCUSD",
-            "ETHUSD",
-            "SOLUSD",
-            "XRPUSD",
-            "DOGEUSD",
-            "ADAUSD",
-            "BNBUSD",
-            "AVAXUSD",
-            "DOTUSD",
-            "LINKUSD",
-            "MATICUSD",
-            "1000BONKUSD",
-            "1000PEPEUSD",
-            "BTCUSDT",
-            "ETHUSDT",
-        }
+        # Delta Exchange Futures / Perpetual contracts
+        #
+        # Examples:
+        # BTCUSD
+        # ETHUSD
+        # ARUSD
+        # INJUSD
+        # UNIUSD
+        # ARBUSD
+        # STXUSD
+        # 1000BONKUSD
+        # BTCUSDT
+        # ETHUSDT
 
-        return s in delta_symbols
-
+        return (
+            s.endswith("USD")
+            or s.endswith("USDT")
+        )
     # =====================================================
     # POSITION KEY
     # =====================================================

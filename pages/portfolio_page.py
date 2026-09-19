@@ -19,14 +19,59 @@ def normalize_history(df):
         df["PNL"] = pd.to_numeric(
             df["PNL"],
             errors="coerce"
-        ).fillna(0)
+        ).fillna(0.0)
+
+    if "Exit" in df.columns:
+        df["Exit"] = pd.to_numeric(
+            df["Exit"],
+            errors="coerce"
+        )
 
     return df
 
+def closed_history(df):
+    """
+    Return only completed/realized trades.
+
+    SELL  = closes LONG
+    COVER = closes SHORT
+    BUY/SHORT = opening trades
+    """
+
+    if df.empty:
+        return df.copy()
+
+    out = df.copy()
+
+    if "Action" in out.columns:
+        action = (
+            out["Action"]
+            .astype(str)
+            .str.strip()
+            .str.upper()
+        )
+
+        out = out[
+            action.isin(["SELL", "COVER"])
+        ].copy()
+
+    if "PNL" in out.columns:
+        out["PNL"] = pd.to_numeric(
+            out["PNL"],
+            errors="coerce"
+        ).fillna(0.0)
+
+    return out
 
 def safe_float(value, default=0.0):
     try:
-        return float(value)
+        value = float(value)
+
+        if pd.isna(value):
+            return default
+
+        return value
+
     except Exception:
         return default
 
@@ -381,14 +426,50 @@ def live_position(trader, symbol):
             entry - 20
         )
 
-        pnl = round(
-            (current - entry) * qty,
-            2
-        )
+        # ----------------------------------------------------
+        # POSITION SIDE
+        # ----------------------------------------------------
+
+        position_side = str(
+            position.get(
+                "position_side",
+                position.get(
+                    "side",
+                    "LONG"
+                )
+            )
+        ).upper().strip()
+
+        # ----------------------------------------------------
+        # SIDE-AWARE UNREALIZED P&L
+        # ----------------------------------------------------
+
+        if position_side in ("SHORT", "SELL"):
+
+            # SHORT:
+            # LTP नीचे  = PROFIT
+            # LTP ऊपर  = LOSS
+
+            pnl = round(
+                (entry - current) * qty,
+                2
+            )
+
+        else:
+
+            # LONG / BUY:
+            # LTP ऊपर  = PROFIT
+            # LTP नीचे  = LOSS
+
+            pnl = round(
+                (current - entry) * qty,
+                2
+            )
 
         rows.append(
             {
                 "Symbol": position_symbol,
+                "Side": position_side,
                 "Option": option_mode,
                 "Qty": qty,
                 "Entry": entry,
@@ -398,7 +479,7 @@ def live_position(trader, symbol):
                 "P&L": pnl,
             }
         )
-
+        
     if not rows:
         st.info("No Open Position")
         return

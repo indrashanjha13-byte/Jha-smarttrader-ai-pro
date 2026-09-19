@@ -4649,9 +4649,42 @@ elif page == "💰 Trading":
 
     try:
 
+        # ====================================================
+        # DASHBOARD → TRADING PAGE MARKET/SYMBOL SYNC
+        # ====================================================
+
+        if market_type == "FUTURES" and futures_symbol:
+
+            # Delta Futures का actual selected symbol
+            trading_symbol = str(
+                futures_symbol
+            ).strip().upper()
+
+            # Trading page session state sync
+            st.session_state["selected_market"] = "FUTURES"
+            st.session_state["market_type"] = "FUTURES"
+            st.session_state["selected_symbol"] = trading_symbol
+            st.session_state["symbol"] = trading_symbol
+
+        else:
+
+            # Indian Market
+            trading_symbol = str(
+                symbol or "^NSEI"
+            ).strip().upper()
+
+            st.session_state["selected_market"] = market_type
+            st.session_state["market_type"] = market_type
+            st.session_state["selected_symbol"] = trading_symbol
+            st.session_state["symbol"] = trading_symbol
+
+        # ====================================================
+        # OPEN TRADING PAGE
+        # ====================================================
+
         trading_page(
             trader=trader,
-            symbol=symbol,
+            symbol=trading_symbol,
             default_quantity=int(quantity),
         )
 
@@ -4660,7 +4693,7 @@ elif page == "💰 Trading":
         st.error(
             f"❌ Trading Page Error: {e}"
         )
-
+   
 # ============================================================
 # PORTFOLIO PAGE
 # ============================================================

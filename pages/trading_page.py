@@ -19,7 +19,6 @@ TRADE_FILE = "paper_trades.csv"
 # =========================================================
 # PAPER / LIVE TRADE HISTORY
 # =========================================================
-
 def load_trades():
 
     columns = [
@@ -35,25 +34,197 @@ def load_trades():
         "P&L"
     ]
 
-    if os.path.exists(TRADE_FILE):
+    try:
 
-        try:
+        if not os.path.exists(TRADE_FILE):
+            return pd.DataFrame(columns=columns)
 
-            df = pd.read_csv(TRADE_FILE)
+        df = pd.read_csv(
+            TRADE_FILE,
+            dtype=str
+        )
 
-            for column in columns:
+        # =================================================
+        # ENSURE ALL REQUIRED COLUMNS
+        # =================================================
 
-                if column not in df.columns:
-                    df[column] = ""
+        for column in columns:
 
-            return df[columns]
+            if column not in df.columns:
+                df[column] = ""
 
-        except Exception:
+        df = df[columns].copy()
 
-            pass
+        # =================================================
+        # CLEAN TEXT COLUMNS
+        # =================================================
 
-    return pd.DataFrame(columns=columns)
+        for column in [
+            "Time",
+            "Symbol",
+            "Side",
+            "Status"
+        ]:
 
+            df[column] = (
+                df[column]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+        # =================================================
+        # NORMALIZE SIDE / STATUS
+        # =================================================
+
+        df["Side"] = (
+            df["Side"]
+            .str.upper()
+        )
+
+        df["Status"] = (
+            df["Status"]
+            .str.upper()
+        )
+
+        # =================================================
+        # NUMERIC COLUMNS
+        # =================================================
+
+        numeric_columns = [
+            "Entry",
+            "Stoploss",
+            "Target",
+            "Quantity",
+            "Exit",
+            "P&L"
+        ]
+
+        for column in numeric_columns:
+
+            df[column] = pd.to_numeric(
+                df[column],
+                errors="coerce"
+            )
+
+        # =================================================
+        # OPEN TRADES
+        # =================================================
+
+        open_mask = (
+            df["Status"]
+            .eq("OPEN")
+        )
+
+        # OPEN trade ka Exit blank/NaN rahega
+        df.loc[
+            open_mask,
+            "Exit"
+        ] = float("nan")
+
+        # OPEN trade ka P&L zero rahega
+        df.loc[
+            open_mask,
+            "P&L"
+        ] = 0.0
+
+        # =================================================
+        # CLOSED TRADES
+        # =================================================
+
+        closed_mask = (
+            df["Status"]
+            .eq("CLOSED")
+        )
+
+        for idx in df.index[closed_mask]:
+
+            try:
+
+                entry = float(
+                    df.at[idx, "Entry"]
+                )
+
+                exit_price = float(
+                    df.at[idx, "Exit"]
+                )
+
+                quantity = int(
+                    float(
+                        df.at[idx, "Quantity"]
+                    )
+                )
+
+                side = str(
+                    df.at[idx, "Side"]
+                ).upper().strip()
+
+                # Agar CLOSED trade ka P&L missing hai
+                # to Entry/Exit se calculate karo.
+
+                if (
+                    pd.isna(
+                        df.at[idx, "P&L"]
+                    )
+                    and
+                    entry == entry
+                    and
+                    exit_price == exit_price
+                    and
+                    quantity > 0
+                ):
+
+                    pnl = calculate_pnl(
+                        side,
+                        entry,
+                        exit_price,
+                        quantity
+                    )
+
+                    df.at[
+                        idx,
+                        "P&L"
+                    ] = float(pnl)
+
+            except Exception:
+                pass
+
+        # =================================================
+        # QUANTITY
+        # =================================================
+
+        df["Quantity"] = (
+            pd.to_numeric(
+                df["Quantity"],
+                errors="coerce"
+            )
+            .fillna(0)
+            .astype(int)
+        )
+
+        # =================================================
+        # FINAL P&L CLEANUP
+        # =================================================
+
+        df["P&L"] = (
+            pd.to_numeric(
+                df["P&L"],
+                errors="coerce"
+            )
+            .fillna(0.0)
+        )
+
+        return df
+
+    except Exception as e:
+
+        st.warning(
+            f"⚠️ Trade history load error: {e}"
+        )
+
+        return pd.DataFrame(
+            columns=columns
+        )
 
 def save_trade(trade):
 
@@ -101,63 +272,135 @@ def get_market_signal(symbol):
             }
 
         if "error" in data:
-
             return data
 
+        # =================================================
+        # PRICE
+        # =================================================
+
         price = float(
-            data.get("Close", 0) or 0
+            data.get("Close")
+            or data.get("Price")
+            or 0
         )
 
-        # -------------------------------------------------
+        # =================================================
         # SIGNAL
-        # -------------------------------------------------
+        # =================================================
 
         signal = (
-            data.get("signal")
+            data.get("SIGNAL")
             or data.get("Signal")
+            or data.get("signal")
             or data.get("final_signal")
             or data.get("action")
             or "WAIT"
         )
 
-        signal = str(signal).upper()
+        signal = str(
+            signal
+        ).strip().upper()
 
-        if "BUY" in signal:
+        # -------------------------------------------------
+        # IMPORTANT:
+        # HOLD ko WAIT me convert nahi karna hai
+        # -------------------------------------------------
+
+        if signal in (
+            "BUY",
+            "STRONG BUY"
+        ):
 
             signal = "BUY"
 
-        elif "SELL" in signal:
+        elif signal in (
+            "SELL",
+            "STRONG SELL"
+        ):
 
             signal = "SELL"
+
+        elif signal in (
+            "HOLD",
+            "WAIT",
+            "NEUTRAL"
+        ):
+
+            signal = "HOLD"
 
         else:
 
             signal = "WAIT"
 
-        # -------------------------------------------------
-        # CONFIDENCE
-        # -------------------------------------------------
+        # =================================================
+        # CONFIDENCE / SIGNAL STRENGTH
+        # =================================================
 
         confidence = (
-            data.get("confidence")
-            or data.get("Confidence")
-            or data.get("ai_confidence")
-            or 0
+            data.get("Signal_Strength")
+            if data.get("Signal_Strength") is not None
+            else data.get("signal_strength")
         )
+
+        # Fallback
+        if confidence is None:
+
+            confidence = (
+                data.get("confidence")
+                or data.get("Confidence")
+                or data.get("ai_confidence")
+                or 0
+            )
 
         try:
 
-            confidence = float(confidence)
+            confidence = float(
+                confidence
+            )
 
         except Exception:
 
-            confidence = 0
+            confidence = 0.0
+
+        # =================================================
+        # MARKET TYPE
+        # =================================================
+
+        market_type = str(
+            data.get("Market_Type")
+            or ""
+        ).strip().upper()
+
+        # =================================================
+        # DELTA DETECTION
+        # =================================================
+
+        is_delta = bool(
+            data.get("Is_Delta")
+            or market_type == "DELTA"
+            or str(symbol).upper().endswith(
+                ("USD", "USDT")
+            )
+        )
+
+        # =================================================
+        # FINAL RESULT
+        # =================================================
 
         return {
+
             "price": price,
+
             "signal": signal,
+
             "confidence": confidence,
-            "raw": data
+
+            "market_type": market_type,
+
+            "is_delta": is_delta,
+
+            "raw_data": data,
+
         }
 
     except Exception as e:
@@ -165,7 +408,6 @@ def get_market_signal(symbol):
         return {
             "error": str(e)
         }
-
 
 # =========================================================
 # P&L CALCULATION
@@ -184,7 +426,7 @@ def calculate_pnl(
         exit_price = float(exit_price)
         quantity = int(quantity)
 
-        side = str(side).upper()
+        side = str(side).upper().strip()
 
         if side == "BUY":
 
@@ -192,7 +434,10 @@ def calculate_pnl(
                 exit_price - entry
             ) * quantity
 
-        if side == "SELL":
+        if side in {
+            "SELL",
+            "SHORT"
+        }:
 
             return (
                 entry - exit_price
@@ -203,6 +448,8 @@ def calculate_pnl(
     except Exception:
 
         return 0.0
+
+
 # =========================================================
 # AUTO EXIT CSV SYNC
 # =========================================================
@@ -211,6 +458,7 @@ def sync_auto_exit_to_paper_trades(
     position,
     exit_price
 ):
+
     """
     Sync PaperTrader auto-exit with paper_trades.csv.
     Finds the matching OPEN trade and marks it CLOSED.
@@ -228,11 +476,36 @@ def sync_auto_exit_to_paper_trades(
 
         symbol = str(
             position.get("symbol", "")
-        )
+        ).strip()
 
         side = str(
             position.get("side", "")
-        ).upper()
+        ).upper().strip()
+
+        # =================================================
+        # POSITION SIDE -> TRADE SIDE
+        # =================================================
+
+        position_side = str(
+            position.get(
+                "position_side",
+                position.get("side", "")
+            )
+        ).upper().strip()
+
+        if position_side == "LONG":
+
+            side = "BUY"
+
+        elif position_side == "SHORT":
+
+            side = "SELL"
+
+        else:
+
+            side = str(
+                position.get("side", "")
+            ).upper().strip()
 
         entry = float(
             position.get("entry", 0)
@@ -242,32 +515,70 @@ def sync_auto_exit_to_paper_trades(
             position.get("qty", 0)
         )
 
-        exit_price = float(exit_price)
+        exit_price = float(
+            exit_price
+        )
 
-        # Find matching OPEN trade
+        # =================================================
+        # FIND MATCHING OPEN TRADE
+        # =================================================
+
         matching = trades[
-            (trades["Status"].astype(str).str.upper() == "OPEN")
-            & (trades["Symbol"].astype(str) == symbol)
-            & (trades["Side"].astype(str).str.upper() == side)
+            (
+                trades["Status"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+                .eq("OPEN")
+            )
+            &
+            (
+                trades["Symbol"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+                .eq(
+                    symbol.strip().upper()
+                )
+            )
+            &
+            (
+                trades["Side"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+                .eq(side)
+            )
         ]
 
         if matching.empty:
             return False
+        
+        # -------------------------------------------------
+        # MATCH ENTRY
+        # -------------------------------------------------
 
-        # Match entry
         matching = matching[
             pd.to_numeric(
                 matching["Entry"],
                 errors="coerce"
-            ).round(4) == round(entry, 4)
+            ).round(8)
+            ==
+            round(entry, 8)
         ]
 
-        # Match quantity
+        # -------------------------------------------------
+        # MATCH QUANTITY
+        # -------------------------------------------------
+
         matching = matching[
             pd.to_numeric(
                 matching["Quantity"],
                 errors="coerce"
-            ).fillna(0).astype(int) == qty
+            )
+            .fillna(0)
+            .astype(int)
+            .eq(qty)
         ]
 
         if matching.empty:
@@ -276,6 +587,10 @@ def sync_auto_exit_to_paper_trades(
         # Latest matching OPEN trade
         row_index = matching.index[-1]
 
+        # -------------------------------------------------
+        # CALCULATE P&L
+        # -------------------------------------------------
+
         pnl = calculate_pnl(
             side,
             entry,
@@ -283,17 +598,42 @@ def sync_auto_exit_to_paper_trades(
             qty
         )
 
-        # Update CSV row
-        trades.at[row_index, "Status"] = "CLOSED"
-        trades.at[row_index, "Exit"] = exit_price
-        trades.at[row_index, "P&L"] = pnl
+        # -------------------------------------------------
+        # UPDATE TRADE
+        # -------------------------------------------------
 
-        # Save current active SL
+        trades.at[
+            row_index,
+            "Status"
+        ] = "CLOSED"
+
+        trades.at[
+            row_index,
+            "Exit"
+        ] = exit_price
+
+        trades.at[
+            row_index,
+            "P&L"
+        ] = pnl
+
+        # -------------------------------------------------
+        # SAVE ACTIVE STOPLOSS
+        # -------------------------------------------------
+
         if "stoploss" in position:
 
-            trades.at[row_index, "Stoploss"] = float(
-                position["stoploss"]
-            )
+            try:
+
+                trades.at[
+                    row_index,
+                    "Stoploss"
+                ] = float(
+                    position["stoploss"]
+                )
+
+            except Exception:
+                pass
 
         trades.to_csv(
             TRADE_FILE,
@@ -309,6 +649,7 @@ def sync_auto_exit_to_paper_trades(
         )
 
         return False
+
 
 # =========================================================
 # TRADING PAGE
@@ -340,19 +681,9 @@ def trading_page(
     # TRADING MODE
     # =====================================================
 
-    # Sidebar auto_mode.py is the single source of truth.
-    #
-    # AUTO_TRADING = False
-    #     -> PAPER TRADING
-    #
-    # AUTO_TRADING = True
-    #     -> LIVE TRADING
-    # =====================================================
-
     live_trading = is_enabled()
 
     paper_trade = not live_trading
-
     auto_trade = live_trading
 
     # =====================================================
@@ -534,33 +865,160 @@ def trading_page(
         )
 
     # =====================================================
-    # SYMBOL
+    # SYMBOL / MARKET
     # =====================================================
 
     st.header("📊 Market")
 
-    symbols = [
-        "^NSEI",
-        "^NSEBANK",
-        "^BSESN",
-        "RELIANCE.NS",
-        "TCS.NS",
-        "INFY.NS",
-        "HDFCBANK.NS",
-        "ICICIBANK.NS",
-        "SBIN.NS",
-        "LT.NS",
-        "AXISBANK.NS"
-    ]
+    # -----------------------------------------------------
+    # READ MARKET FROM DASHBOARD SESSION STATE
+    # -----------------------------------------------------
 
-    if symbol not in symbols:
+    market_type = st.session_state.get(
+        "market_type",
+        st.session_state.get(
+            "selected_market",
+            ""
+        )
+    )
 
-        symbol = "^NSEI"
+    market_type = str(
+        market_type or ""
+    ).strip().upper()
 
-    selected_symbol = st.selectbox(
-        "Trading Symbol",
-        symbols,
-        index=symbols.index(symbol)
+    # -----------------------------------------------------
+    # DELTA DETECTION
+    # -----------------------------------------------------
+
+    incoming_symbol = str(
+        symbol or ""
+    ).strip().upper()
+
+    is_delta = (
+        market_type in {
+            "DELTA",
+            "DELTA FUTURES",
+            "DELTA_FUTURES",
+            "FUTURES"
+        }
+        or incoming_symbol.endswith(
+            ("USD", "USDT")
+        )
+    )
+
+    # =====================================================
+    # DELTA FUTURES
+    # =====================================================
+
+    if is_delta:
+
+        delta_symbol = (
+            incoming_symbol
+            or str(
+                st.session_state.get(
+                    "selected_symbol",
+                    ""
+                )
+            ).strip().upper()
+            or str(
+                st.session_state.get(
+                    "symbol",
+                    ""
+                )
+            ).strip().upper()
+            or "BTCUSD"
+        )
+
+        # Old NSE symbol ko Delta me allow mat karo
+        if delta_symbol in {
+            "",
+            "^NSEI",
+            "^NSEBANK",
+            "^BSESN"
+        }:
+
+            delta_symbol = (
+                str(
+                    st.session_state.get(
+                        "selected_symbol",
+                        "BTCUSD"
+                    )
+                )
+                .strip()
+                .upper()
+            )
+
+            if delta_symbol in {
+                "",
+                "^NSEI",
+                "^NSEBANK",
+                "^BSESN"
+            }:
+
+                delta_symbol = "BTCUSD"
+
+        selected_symbol = st.text_input(
+            "Trading Symbol",
+            value=delta_symbol,
+            key="delta_trading_symbol"
+        ).strip().upper()
+
+        if not selected_symbol:
+
+            selected_symbol = delta_symbol
+
+        st.success(
+            f"🟢 DELTA FUTURES | "
+            f"{selected_symbol} | "
+            f"MARKET OPEN 24/7"
+        )
+
+    # =====================================================
+    # INDIAN MARKET
+    # =====================================================
+
+    else:
+
+        symbols = [
+            "^NSEI",
+            "^NSEBANK",
+            "^BSESN",
+            "RELIANCE.NS",
+            "TCS.NS",
+            "INFY.NS",
+            "HDFCBANK.NS",
+            "ICICIBANK.NS",
+            "SBIN.NS",
+            "LT.NS",
+            "AXISBANK.NS"
+        ]
+
+        incoming_indian_symbol = (
+            incoming_symbol
+            if incoming_symbol in symbols
+            else "^NSEI"
+        )
+
+        selected_symbol = st.selectbox(
+            "Trading Symbol",
+            symbols,
+            index=symbols.index(
+                incoming_indian_symbol
+            ),
+            key="indian_trading_symbol"
+        )
+
+        st.caption(
+            f"📊 INDIAN MARKET | "
+            f"{selected_symbol}"
+        )
+
+    # =====================================================
+    # INITIALIZE SIGNAL RESULT
+    # =====================================================
+
+    result = st.session_state.get(
+        "trading_signal"
     )
 
     # =====================================================
@@ -586,6 +1044,10 @@ def trading_page(
                 "trading_signal"
             ] = result
 
+    # -----------------------------------------------------
+    # ALWAYS READ LATEST RESULT
+    # -----------------------------------------------------
+
     result = st.session_state.get(
         "trading_signal"
     )
@@ -601,29 +1063,48 @@ def trading_page(
 
         else:
 
-            price = result.get(
-                "price",
-                0
+            price = float(
+                result.get(
+                    "price",
+                    0
+                ) or 0
             )
 
-            signal = result.get(
-                "signal",
-                "WAIT"
+            signal = str(
+                result.get(
+                    "signal",
+                    "WAIT"
+                )
+            ).upper()
+
+            confidence = float(
+                result.get(
+                    "confidence",
+                    0
+                ) or 0
             )
 
-            confidence = result.get(
-                "confidence",
-                0
-            )
+            # -------------------------------------------------
+            # SIGNAL METRICS
+            # -------------------------------------------------
 
             col1, col2, col3 = st.columns(3)
 
             with col1:
 
-                st.metric(
-                    "Current Price",
-                    f"₹{price:,.2f}"
-                )
+                if is_delta:
+
+                    st.metric(
+                        "Current Price",
+                        f"${price:,.8f}"
+                    )
+
+                else:
+
+                    st.metric(
+                        "Current Price",
+                        f"₹{price:,.2f}"
+                    )
 
             with col2:
 
@@ -638,6 +1119,10 @@ def trading_page(
                     "Confidence",
                     f"{confidence:.0f}%"
                 )
+
+            # -------------------------------------------------
+            # SIGNAL STATUS
+            # -------------------------------------------------
 
             if signal == "BUY":
 
@@ -697,37 +1182,127 @@ def trading_page(
 
     current_price = 0.0
 
+    # -----------------------------------------------------
+    # PRIMARY PRICE — SIGNAL RESULT
+    # -----------------------------------------------------
+
     if result and "error" not in result:
 
         try:
 
             current_price = float(
-                result.get(
-                    "price",
-                    0
-                )
+                result.get("price")
+                or result.get("Price")
+                or result.get("Close")
+                or 0
             )
 
         except Exception:
 
             current_price = 0.0
 
-    entry_default = (
-        current_price
-        if current_price > 0
-        else 100.0
+
+    # -----------------------------------------------------
+    # DELTA PRICE FALLBACK
+    # -----------------------------------------------------
+
+    if is_delta and current_price <= 0:
+
+        try:
+
+            delta_symbol_for_price = str(
+               selected_symbol
+            ).strip().upper()
+
+            delta_data = get_signals(
+                delta_symbol_for_price
+            )
+
+            if isinstance(delta_data, dict):
+
+                current_price = float(
+                    delta_data.get("Close")
+                    or delta_data.get("Price")
+                    or 0
+                )
+
+        except Exception:
+
+            current_price = 0.0
+
+
+    # -----------------------------------------------------
+    # FINAL PRICE VALIDATION
+    # -----------------------------------------------------
+
+    if current_price <= 0:
+
+        st.warning(
+            "⚠️ Current market price unavailable."
+        )
+
+    # -----------------------------------------------------
+    # ENTRY PRICE
+    # -----------------------------------------------------
+
+    entry_key = (
+        f"trading_entry_price_"
+        f"{str(selected_symbol).strip().upper()}"
     )
+
+    # -----------------------------------------------------
+    # DELTA = LIVE MARKET PRICE
+    # -----------------------------------------------------
+
+    if is_delta and current_price > 0:
+
+        # Old Streamlit value such as 100.0 ko overwrite karo
+        st.session_state[entry_key] = float(current_price)
+
+        entry_default = float(current_price)
+
+    else:
+
+        entry_default = (
+            float(current_price)
+            if current_price > 0
+            else 100.0
+        )
+
 
     entry_price = st.number_input(
         "Entry Price",
         min_value=0.0,
         value=float(entry_default),
-        step=0.05
+        step=(
+            0.00000001
+            if is_delta
+           else 0.05
+        ),
+        format=(
+            "%.8f"
+            if is_delta
+            else "%.2f"
+        ),
+        key=entry_key,
+        disabled=is_delta
     )
 
-   # =========================================================
-   # PAPER AUTO EXIT
-   # =========================================================
+    # -----------------------------------------------------
+    # FINAL DELTA ENTRY VALIDATION
+    # -----------------------------------------------------
+
+    if is_delta and current_price > 0:
+
+        entry_price = float(current_price)
+
+        st.caption(
+            f"📡 Delta Entry = Live Market Price "
+            f"${entry_price:.8f}"
+        )
+    # =====================================================
+    # PAPER AUTO EXIT
+    # =====================================================
 
     if (
         trader is not None
@@ -756,18 +1331,37 @@ def trading_page(
 
                 if synced:
 
-                    st.success(
-                        f"🛑 Paper Position Auto Closed | "
-                        f"Price: ₹{current_price:.2f}"
-                    )
+                    if is_delta:
+
+                        st.success(
+                            f"🛑 Paper Position Auto Closed | "
+                            f"Price: ${current_price:.8f}"
+                        )
+
+                    else:
+
+                        st.success(
+                            f"🛑 Paper Position Auto Closed | "
+                            f"Price: ₹{current_price:.2f}"
+                        )
 
                 else:
 
-                    st.warning(
-                        f"🛑 Paper Position Auto Closed | "
-                        f"CSV Sync Not Found | "
-                        f"Price: ₹{current_price:.2f}"
-                    )
+                    if is_delta:
+
+                        st.warning(
+                            f"🛑 Paper Position Auto Closed | "
+                            f"CSV Sync Not Found | "
+                            f"Price: ${current_price:.8f}"
+                        )
+
+                    else:
+
+                        st.warning(
+                            f"🛑 Paper Position Auto Closed | "
+                            f"CSV Sync Not Found | "
+                            f"Price: ₹{current_price:.2f}"
+                        )
 
                 st.rerun()
 
@@ -776,7 +1370,7 @@ def trading_page(
             st.error(
                 f"❌ Trailing/Auto Exit Error: {e}"
             )
-            
+
     # =====================================================
     # TRADE SIDE
     # =====================================================
@@ -787,7 +1381,8 @@ def trading_page(
             "Auto Signal",
             "BUY",
             "SELL"
-        ]
+        ],
+        key="trading_trade_side"
     )
 
     # =====================================================
@@ -795,11 +1390,17 @@ def trading_page(
     # =====================================================
 
     try:
-        default_quantity = int(default_quantity)
+
+        default_quantity = int(
+            default_quantity
+        )
+
     except Exception:
+
         default_quantity = 1
 
     if default_quantity < 1:
+
         default_quantity = 1
 
     quantity = st.number_input(
@@ -807,11 +1408,11 @@ def trading_page(
         min_value=1,
         value=default_quantity,
         step=default_quantity,
-        key=f"trading_quantity_{symbol}"
+        key=f"trading_quantity_{selected_symbol}"
     )
 
     st.caption(
-        f"📦 {symbol} | "
+        f"📦 {selected_symbol} | "
         f"Default Quantity: {default_quantity}"
     )
 
@@ -844,64 +1445,178 @@ def trading_page(
     # SL / TARGET
     # =====================================================
 
-    if execution_side == "BUY":
+    if is_delta:
 
-        default_sl = max(
-            entry_price - stoploss_points,
-            0
-        )
+        # -------------------------------------------------
+        # DELTA FUTURES
+        # Percentage-based SL / TARGET
+        # -------------------------------------------------
 
-        default_target = (
-            entry_price +
-            target_points
-        )
+        delta_sl_percent = 0.50
+        delta_target_percent = 1.00
 
-    elif execution_side == "SELL":
+        if execution_side == "BUY":
 
-        default_sl = (
-            entry_price +
-            stoploss_points
-        )
+            default_sl = (
+                entry_price
+                * (1.0 - delta_sl_percent / 100.0)
+            )
 
-        default_target = max(
-            entry_price -
-            target_points,
-            0
-        )
+            default_target = (
+                entry_price
+                * (1.0 + delta_target_percent / 100.0)
+            )
+
+        elif execution_side == "SELL":
+
+            default_sl = (
+                entry_price
+                * (1.0 + delta_sl_percent / 100.0)
+            )
+
+            default_target = max(
+                entry_price
+                * (1.0 - delta_target_percent / 100.0),
+                0.0
+            )
+
+        else:
+
+            default_sl = (
+                entry_price
+                * (1.0 - delta_sl_percent / 100.0)
+            )
+
+            default_target = (
+                entry_price
+                * (1.0 + delta_target_percent / 100.0)
+            )
 
     else:
 
-        default_sl = max(
-            entry_price -
-            stoploss_points,
-            0
-        )
+        # -------------------------------------------------
+        # INDIAN MARKET
+        # Existing point-based logic
+        # -------------------------------------------------
 
-        default_target = (
-            entry_price +
-            target_points
-        )
+        if execution_side == "BUY":
 
-    col1, col2 = st.columns(2)
+            default_sl = max(
+                entry_price - stoploss_points,
+                0
+            )
 
-    with col1:
+            default_target = (
+                entry_price + target_points
+            )
 
-        stoploss = st.number_input(
-            "Stoploss",
-            min_value=0.0,
-            value=float(default_sl),
-            step=0.05
-        )
+        elif execution_side == "SELL":
 
-    with col2:
+            default_sl = (
+                entry_price + stoploss_points
+            )
 
-        target = st.number_input(
-            "Target",
-            min_value=0.0,
-            value=float(default_target),
-            step=0.05
-        )
+            default_target = max(
+                entry_price - target_points,
+                0
+            )
 
+        else:
+
+            default_sl = max(
+                entry_price - stoploss_points,
+                0
+            )
+
+            default_target = (
+                entry_price + target_points
+            )
+
+    price_step = (
+        0.00000001
+        if is_delta
+        else 0.05
+    )
+
+    price_format = (
+        "%.8f"
+        if is_delta
+        else "%.2f"
+    )
+
+    # =====================================================
+    # SL / TARGET INPUT
+    # =====================================================
+
+    sl_key = (
+        f"trading_stoploss_"
+        f"{str(selected_symbol).strip().upper()}_"
+        f"{execution_side}"
+    )
+
+    target_key = (
+        f"trading_target_"
+        f"{str(selected_symbol).strip().upper()}_"
+        f"{execution_side}"
+    )
+
+    # -----------------------------------------------------
+    # DELTA FUTURES
+    # Percentage-based SL / TARGET
+    # -----------------------------------------------------
+
+    if is_delta and entry_price > 0:
+
+        stoploss = float(default_sl)
+        target = float(default_target)
+
+    else:
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+
+            stoploss = st.number_input(
+                "Stoploss",
+                min_value=0.0,
+                value=float(default_sl),
+                step=price_step,
+                format=price_format,
+                key=sl_key
+            )
+
+        with col2:
+
+            target = st.number_input(
+                "Target",
+                min_value=0.0,
+                value=float(default_target),
+                step=price_step,
+                format=price_format,
+                key=target_key
+            )
+
+    # -----------------------------------------------------
+    # DELTA SL / TARGET DISPLAY
+    # -----------------------------------------------------
+
+    if is_delta:
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+
+            st.metric(
+                "Stoploss",
+                f"${stoploss:.8f}"
+            )
+
+        with col2:
+
+            st.metric(
+                "Target",
+                f"${target:.8f}"
+            )
     # =====================================================
     # RISK / REWARD
     # =====================================================
@@ -924,11 +1639,21 @@ def trading_page(
 
         rr = 0
 
-    st.info(
-        f"Risk: ₹{risk:.2f} | "
-        f"Reward: ₹{reward:.2f} | "
-        f"Risk/Reward: 1:{rr:.2f}"
-    )
+    if is_delta:
+
+        st.info(
+            f"Risk: ${risk:.8f} | "
+            f"Reward: ${reward:.8f} | "
+            f"Risk/Reward: 1:{rr:.2f}"
+        )
+
+    else:
+
+        st.info(
+            f"Risk: ₹{risk:.2f} | "
+            f"Reward: ₹{reward:.2f} | "
+            f"Risk/Reward: 1:{rr:.2f}"
+        )
 
     # =====================================================
     # TRAILING STOPLOSS
@@ -944,25 +1669,30 @@ def trading_page(
 
         trailing_enabled = st.checkbox(
             "Enable Trailing Stoploss",
-            value=trailing_enabled
+            value=trailing_enabled,
+            key="trading_trailing_enabled"
         )
 
     with col2:
 
         trailing_start = st.number_input(
             "Trailing Start (Points)",
-            min_value=0.05,
+            min_value=0.00000001,
             value=float(trailing_start),
-            step=0.05
+            step=price_step,
+            format=price_format,
+            key="trading_trailing_start"
         )
 
     with col3:
 
         trailing_distance = st.number_input(
             "Trailing Distance (Points)",
-            min_value=0.05,
+            min_value=0.00000001,
             value=float(trailing_distance),
-            step=0.05
+            step=price_step,
+            format=price_format,
+            key="trading_trailing_distance"
         )
 
     if trailing_enabled:
@@ -977,6 +1707,11 @@ def trading_page(
         else:
 
             st.success(
+                f"🟢 Trailing ON | "
+                f"Start: +{trailing_start:.8f} | "
+                f"Distance: {trailing_distance:.8f}"
+                if is_delta
+                else
                 f"🟢 Trailing ON | "
                 f"Start: +{trailing_start:.2f} | "
                 f"Distance: {trailing_distance:.2f}"
@@ -993,10 +1728,6 @@ def trading_page(
     # =====================================================
 
     st.header("🚀 Execution")
-
-    # -----------------------------------------------------
-    # SHOW BUY / SELL BUTTONS
-    # -----------------------------------------------------
 
     if execution_side == "BUY":
 
@@ -1031,19 +1762,21 @@ def trading_page(
         buy_clicked = st.button(
             "🟢 BUY",
             type="primary",
-            use_container_width=True
+            use_container_width=True,
+            key="trading_buy_button"
         )
 
     with sell_col:
 
         sell_clicked = st.button(
             "🔴 SELL",
-            use_container_width=True
+            use_container_width=True,
+            key="trading_sell_button"
         )
 
-    # -----------------------------------------------------
+    # =====================================================
     # DETERMINE CLICKED SIDE
-    # -----------------------------------------------------
+    # =====================================================
 
     clicked_side = None
 
@@ -1082,14 +1815,6 @@ def trading_page(
         # -------------------------------------------------
 
         execution_side = clicked_side
-
-        # -------------------------------------------------
-        # CONFIDENCE CHECK
-        #
-        # Manual BUY/SELL is allowed.
-        # Auto Signal confidence filter is NOT applied
-        # because user explicitly clicked BUY or SELL.
-        # -------------------------------------------------
 
         # -------------------------------------------------
         # ENTRY CHECK
@@ -1458,7 +2183,6 @@ def trading_page(
                             live_result
                         )
 
-
     st.divider()
 
     # =====================================================
@@ -1473,8 +2197,34 @@ def trading_page(
 
     if not trades.empty:
 
+        # =================================================
+        # CURRENT SYMBOL
+        # =================================================
+
+        current_symbol = str(
+            selected_symbol
+        ).strip().upper()
+
+        # =================================================
+        # CURRENT SYMBOL OPEN POSITIONS
+        # =================================================
+
         open_trades = trades[
-            trades["Status"] == "OPEN"
+            (
+                trades["Status"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+                .eq("OPEN")
+            )
+            &
+            (
+                trades["Symbol"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+                .eq(current_symbol)
+            )
         ].copy()
 
         if not open_trades.empty:
@@ -1488,7 +2238,7 @@ def trading_page(
         else:
 
             st.info(
-                "No open paper positions."
+                f"📭 No open paper positions for {current_symbol}."
             )
 
     else:
@@ -1496,15 +2246,40 @@ def trading_page(
         st.info(
             "No paper trades yet."
         )
-
     # =====================================================
     # CLOSE PAPER TRADE
     # =====================================================
 
     if not trades.empty:
 
+        # =================================================
+        # CURRENT SYMBOL
+        # =================================================
+
+        current_symbol = str(
+            selected_symbol
+        ).strip().upper()
+
+        # =================================================
+        # CURRENT SYMBOL OPEN TRADES ONLY
+        # =================================================
+
         open_trades = trades[
-            trades["Status"] == "OPEN"
+            (
+                trades["Status"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+                .eq("OPEN")
+            )
+            &
+            (
+                trades["Symbol"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+                .eq(current_symbol)
+            )
         ].copy()
 
         if not open_trades.empty:
@@ -1535,12 +2310,17 @@ def trading_page(
 
                 value=0.0,
 
-                step=0.05
+                step=price_step,
+
+                format=price_format,
+
+                key="manual_exit_price"
             )
 
             if st.button(
                 "🛑 Close Position",
-                use_container_width=True
+                use_container_width=True,
+                key="close_paper_position"
             ):
 
                 if exit_price <= 0:
@@ -1558,7 +2338,7 @@ def trading_page(
                             idx,
                             "Side"
                         ]
-                    )
+                    ).strip().upper()
 
                     entry = float(
                         trades.loc[
@@ -1574,16 +2354,20 @@ def trading_page(
                         ]
                     )
 
+                    # =================================================
+                    # CALCULATE P&L
+                    # =================================================
+
                     pnl = calculate_pnl(
-
                         side,
-
                         entry,
-
                         exit_price,
-
                         qty
                     )
+
+                    # =================================================
+                    # CLOSE TRADE
+                    # =================================================
 
                     trades.loc[
                         idx,
@@ -1593,31 +2377,57 @@ def trading_page(
                     trades.loc[
                         idx,
                         "Exit"
-                    ] = exit_price
+                    ] = float(exit_price)
 
                     trades.loc[
                         idx,
                         "P&L"
-                    ] = pnl
+                    ] = float(pnl)
+
+                    # =================================================
+                    # SAVE TRADE
+                    # =================================================
 
                     trades.to_csv(
                         TRADE_FILE,
                         index=False
                     )
 
-                    if pnl >= 0:
+                    # =================================================
+                    # RESULT
+                    # =================================================
 
-                        st.success(
-                            f"✅ Position Closed — "
-                            f"P&L ₹{pnl:.2f}"
-                        )
+                    if is_delta:
+
+                        if pnl >= 0:
+
+                            st.success(
+                                f"✅ Position Closed — "
+                                f"P&L ${pnl:.8f}"
+                            )
+
+                        else:
+
+                            st.error(
+                                f"❌ Position Closed — "
+                                f"P&L ${pnl:.8f}"
+                            )
 
                     else:
 
-                        st.error(
-                            f"❌ Position Closed — "
-                            f"P&L ₹{pnl:.2f}"
-                        )
+                        if pnl >= 0:
+
+                            st.success(
+                                f"✅ Position Closed — "
+                                f"P&L ₹{pnl:.2f}"
+                            )
+
+                        else:
+
+                            st.error(
+                                f"❌ Position Closed — "
+                                f"P&L ₹{pnl:.2f}"
+                            )
 
                     st.rerun()
 
@@ -1657,11 +2467,16 @@ def trading_page(
 
     if not trades.empty:
 
-        total_trades = len(trades)
-
         closed = trades[
-            trades["Status"] == "CLOSED"
+            trades["Status"]
+            .astype(str)
+            .str.upper()
+            .eq("CLOSED")
         ].copy()
+
+        total_trades = len(
+            closed
+                )
 
         if not closed.empty:
 
@@ -1725,10 +2540,19 @@ def trading_page(
                 f"{win_rate:.1f}%"
             )
 
-        st.metric(
-            "Total P&L",
-            f"₹{total_pnl:.2f}"
-        )
+        if is_delta:
+
+            st.metric(
+                "Total P&L",
+                f"${total_pnl:.8f}"
+            )
+
+        else:
+
+            st.metric(
+                "Total P&L",
+                f"₹{total_pnl:.2f}"
+            )
 
     else:
 

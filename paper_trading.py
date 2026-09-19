@@ -61,26 +61,22 @@ class PaperTrader:
 
         s = str(symbol or "").strip().upper()
 
-        delta_symbols = {
-            "BTCUSD",
-            "ETHUSD",
-            "SOLUSD",
-            "XRPUSD",
-            "DOGEUSD",
-            "ADAUSD",
-            "BNBUSD",
-            "AVAXUSD",
-            "DOTUSD",
-            "LINKUSD",
-            "MATICUSD",
-            "1000BONKUSD",
-            "1000PEPEUSD",
-            "BTCUSDT",
-            "ETHUSDT",
-        }
+        # Delta Exchange Futures / Perpetual contracts
+        # Examples:
+        # BTCUSD
+        # ETHUSD
+        # ARUSD
+        # INJUSD
+        # UNIUSD
+        # ARBUSD
+        # 1000BONKUSD
+        # BTCUSDT
+        # ETHUSDT
 
-        return s in delta_symbols
-
+        return (
+            s.endswith("USD")
+            or s.endswith("USDT")
+        )
     # =====================================================
     # POSITION KEY
     # =====================================================
@@ -978,10 +974,11 @@ class PaperTrader:
                 position["stoploss"]
             )
 
-            pnl = round(
-                (current_price - entry) * qty,
-                2
-            )
+            pnl = (
+                float(current_price) - float(entry)
+            ) * int(qty)
+
+            
 
             invested_capital = entry * qty
 
@@ -1113,10 +1110,9 @@ class PaperTrader:
                 position["stoploss"]
             )
 
-            pnl = round(
-                (entry - current_price) * qty,
-                2
-            )
+            pnl = (
+                float(entry) - float(current_price)
+            ) * int(qty)
 
             margin = entry * qty
 
@@ -1778,7 +1774,7 @@ class PaperTrader:
                 f"âŒ Open P&L Error: {e}"
             )
 
-        return round(total_pnl, 2)
+        return float(total_pnl)
 
     # =====================================================
     # SAVE TRADE
