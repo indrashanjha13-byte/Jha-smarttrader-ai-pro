@@ -2445,18 +2445,41 @@ def trading_page(
 
     if not trades.empty:
 
-        st.dataframe(
-            trades.tail(20),
-            use_container_width=True,
-            hide_index=True
-        )
+        # =====================================================
+        # CURRENT SYMBOL TRADE HISTORY ONLY
+        # =====================================================
+
+        current_symbol = str(
+            selected_symbol
+        ).strip().upper()
+
+        history_trades = trades[
+            trades["Symbol"]
+            .astype(str)
+            .str.strip()
+            .str.upper()
+            .eq(current_symbol)
+        ].copy()
+
+        if not history_trades.empty:
+
+            st.dataframe(
+                history_trades.tail(20),
+                use_container_width=True,
+                hide_index=True
+            )
+
+        else:
+
+            st.info(
+                f"📜 No trade history for {current_symbol}."
+            )
 
     else:
 
         st.info(
             "Trade history is empty."
         )
-
     # =====================================================
     # STATISTICS
     # =====================================================
@@ -2467,13 +2490,32 @@ def trading_page(
 
     if not trades.empty:
 
-        closed = trades[
-            trades["Status"]
-            .astype(str)
-            .str.upper()
-            .eq("CLOSED")
-        ].copy()
+        # =====================================================
+        # CURRENT SYMBOL CLOSED TRADES ONLY
+        # =====================================================
 
+        current_symbol = str(
+            selected_symbol
+        ).strip().upper()
+
+        closed = trades[
+            (
+               trades["Status"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+                .eq("CLOSED")
+            )
+            &
+            (
+                trades["Symbol"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+                .eq(current_symbol)
+            )
+        ].copy()
+       
         total_trades = len(
             closed
                 )
