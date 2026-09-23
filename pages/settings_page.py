@@ -458,6 +458,34 @@ def settings_page():
         key="max_trades_input"
     )
 
+    max_losses = st.number_input(
+        "Max Losses Per Day",
+        min_value=0,
+        max_value=100,
+        value=int(
+            settings.get(
+                "max_losses",
+                3
+            )
+        ),
+        step=1,
+        key="max_losses_input"
+    )
+
+    max_daily_loss = st.number_input(
+        "Max Daily Loss",
+        min_value=1.0,
+        max_value=1000000.0,
+        value=float(
+            settings.get(
+                "max_daily_loss",
+                2000.0
+            )
+        ),
+        step=100.0,
+        key="max_daily_loss_input"
+    )
+
     default_target = st.number_input(
         "Default Target (Points)",
         min_value=5,
@@ -955,6 +983,8 @@ Price 120 → Trailing SL 110
                 # Risk
                 "risk_per_trade": risk_per_trade,
                 "max_trades": max_trades,
+                "max_losses": max_losses,
+                "max_daily_loss": max_daily_loss,
                 "default_target": default_target,
                 "default_stoploss": default_stoploss,
 

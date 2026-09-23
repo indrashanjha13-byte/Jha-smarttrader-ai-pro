@@ -291,7 +291,7 @@ def get_active_positions(trader):
 
 def live_position(trader, symbol):
 
-    st.header("📈 Live Position")
+    st.header("Live Position")
 
     positions = get_active_positions(trader)
 
@@ -447,8 +447,8 @@ def live_position(trader, symbol):
         if position_side in ("SHORT", "SELL"):
 
             # SHORT:
-            # LTP नीचे  = PROFIT
-            # LTP ऊपर  = LOSS
+            # SHORT: LTP falling = PROFIT
+            # SHORT: LTP rising = LOSS
 
             pnl = round(
                 (entry - current) * qty,
@@ -458,8 +458,8 @@ def live_position(trader, symbol):
         else:
 
             # LONG / BUY:
-            # LTP ऊपर  = PROFIT
-            # LTP नीचे  = LOSS
+            # LONG / BUY: LTP rising = PROFIT
+            # LONG / BUY: LTP falling = LOSS
 
             pnl = round(
                 (current - entry) * qty,
@@ -499,7 +499,7 @@ def live_position(trader, symbol):
 
     st.metric(
         "Total Open P&L",
-        f"₹ {total_pnl:,.2f}"
+        (f"${total_pnl:.8f}" if str(symbol or "").upper().endswith(("USD", "USDT")) else f"\u20b9 {total_pnl:,.2f}")
     )
 
 
@@ -509,7 +509,7 @@ def live_position(trader, symbol):
 
 def holdings(trader, symbol):
 
-    st.header("💼 Holdings")
+    st.header("Holdings")
 
     positions = get_active_positions(trader)
 
@@ -600,7 +600,7 @@ def holdings(trader, symbol):
 
 def order_history():
 
-    st.header("📜 Order History")
+    st.header("Order History")
 
     try:
 
@@ -644,14 +644,13 @@ def order_history():
             "No Order History Found"
         )
 
-
 # ============================================================
 # Performance Summary
 # ============================================================
 
 def performance_summary():
 
-    st.header("📊 Performance Summary")
+    st.header("Performance Summary")
 
     try:
 
@@ -672,21 +671,29 @@ def performance_summary():
             )
             return
 
-        total = len(history)
+        # =====================================================
+        # REALIZED / CLOSED TRADES ONLY
+        # BUY / SHORT = opening trades
+        # SELL / COVER = completed trades
+        # =====================================================
+
+        closed = closed_history(history)
+
+        total = len(closed)
 
         win = len(
-            history[
-                history["PNL"] > 0
+            closed[
+                closed["PNL"] > 0
             ]
         )
 
         loss = len(
-            history[
-                history["PNL"] < 0
+            closed[
+                closed["PNL"] < 0
             ]
         )
 
-        net = history["PNL"].sum()
+        net = closed["PNL"].sum()
 
         win_rate = (
             round(
@@ -721,22 +728,21 @@ def performance_summary():
 
         st.metric(
             "Net Profit",
-            f"₹ {net:.2f}"
+            f"INR {net:,.2f}"
         )
 
-    except Exception:
+    except Exception as e:
+
         st.info(
-            "No Performance Data"
+            f"No Performance Data: {e}"
         )
 
 
-# ============================================================
-# Monthly P&L
 # ============================================================
 
 def monthly_pnl():
 
-    st.header("📅 Monthly P&L")
+    st.header("Monthly P&L")
 
     try:
 
@@ -752,7 +758,7 @@ def monthly_pnl():
             "Date"
             if "Date" in history.columns
             else (
-                "Time"
+                "Ti#me"
                 if "Time" in history.columns
                 else None
             )
@@ -816,13 +822,13 @@ def monthly_pnl():
         )
 
 
-# ============================================================
+#============================================================
 # Portfolio Allocation
 # ============================================================
 
 def portfolio_allocation(trader):
 
-    st.header("🥧 Portfolio Allocation")
+    st.header("Portfolio Allocation")
 
     positions = get_active_positions(
         trader
@@ -916,7 +922,7 @@ def portfolio_allocation(trader):
 
 def equity_curve():
 
-    st.header("📈 Equity Curve")
+    st.header("Equity Curve")
 
     try:
 
@@ -964,7 +970,7 @@ def equity_curve():
 
 def best_worst_trade():
 
-    st.header("🏆 Best / Worst Trade")
+    st.header("Best / Worst Trade")
 
     try:
 
@@ -998,7 +1004,7 @@ def best_worst_trade():
         with c1:
 
             st.success(
-                "🏆 Best Trade"
+                "Best Trade"
             )
 
             st.write(
@@ -1013,23 +1019,23 @@ def best_worst_trade():
 
             st.write(
                 f"**Entry:** "
-                f"₹ {safe_float(best.get('Entry', 0)):.2f}"
+                f"Entry: {safe_float(best.get('Entry', 0)):.2f}"
             )
 
             st.write(
                 f"**Exit:** "
-                f"₹ {safe_float(best.get('Exit', 0)):.2f}"
+                f"Exit: {safe_float(best.get('Exit', 0)):.2f}"
             )
 
             st.metric(
                 "Profit",
-                f"₹ {safe_float(best.get('PNL', 0)):.2f}"
+                f"PNL: {safe_float(best.get('PNL', 0)):.2f}"
             )
 
         with c2:
 
             st.error(
-                "💀 Worst Trade"
+                "Worst Trade"
             )
 
             st.write(
@@ -1044,20 +1050,21 @@ def best_worst_trade():
 
             st.write(
                 f"**Entry:** "
-                f"₹ {safe_float(worst.get('Entry', 0)):.2f}"
+                f"Entry: {safe_float(worst.get('Entry', 0)):.2f}"
             )
 
             st.write(
                 f"**Exit:** "
-                f"₹ {safe_float(worst.get('Exit', 0)):.2f}"
+                f"Exit: {safe_float(worst.get('Exit', 0)):.2f}"
             )
 
             st.metric(
                 "Loss",
-                f"₹ {safe_float(worst.get('PNL', 0)):.2f}"
+                f"PNL: {safe_float(worst.get('PNL', 0)):.2f}"
             )
 
     except Exception:
+
         st.info(
             "No Trade Data Available"
         )
@@ -1069,7 +1076,7 @@ def best_worst_trade():
 
 def portfolio_health(trader):
 
-    st.header("🤖 AI Portfolio Health")
+    st.header("AI Portfolio Health")
 
     score = 100
 
@@ -1092,13 +1099,13 @@ def portfolio_health(trader):
         score -= 20
 
     if score >= 80:
-        status = "🟢 SAFE"
+        status = "SAFE"
 
     elif score >= 60:
-        status = "🟡 MODERATE"
+        status = "MODERATE"
 
     else:
-        status = "🔴 RISKY"
+        status = "RISKY"
 
     st.progress(
         score / 100
@@ -1122,8 +1129,8 @@ def portfolio_health(trader):
 # ============================================================
 
 def portfolio_page(trader, symbol):
-
-    st.title("📦 Portfolio")
+    st.title("Portfolio")
+    st.title("Portfolio")
 
     live_position(
         trader,

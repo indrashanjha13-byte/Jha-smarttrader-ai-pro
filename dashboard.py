@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 # Jha SmartTrader AI Pro
 # dashboard.py
 # ============================================================
@@ -166,10 +166,10 @@ def get_cached_option_chain():
         return scan_all_option_chain()
 
     except Exception as e:
-        logging.warning(
-            f"Option chain error: {e}"
+
+        st.error(
+            f"Dashboard page error: {e}"
         )
-        return None
 
 # ============================================================
 # EXACT OPTION PRICE CACHE
@@ -786,6 +786,7 @@ def render_delta_all_coins():
         elif "FUTURE" in contract_upper:
             contract_display = "FUTURES"
         else:
+
             contract_display = (
                 contract_upper
                 if contract_upper
@@ -3380,6 +3381,68 @@ if page == "🏠 Dashboard":
     )
 
     # ========================================================
+    # ========================================================
+    # SYNC LIVE OPTION LTP TO PAPER POSITIONS
+    # ========================================================
+
+    if (
+        paper_trading
+        and auto_paper_trading
+        and not live_auto_trading
+        and market_type == "OPTIONS"
+    ):
+
+        try:
+
+            active_positions = trader.get_active_positions()
+
+            if isinstance(active_positions, dict):
+
+                for position in active_positions.values():
+
+                    if not isinstance(position, dict):
+                        continue
+
+                    if str(
+                        position.get("status", "OPEN")
+                    ).strip().upper() != "OPEN":
+                        continue
+
+                    pos_option = str(
+                        position.get("option_mode", "N/A")
+                    ).strip().upper()
+
+                    if pos_option not in ("CE", "PE"):
+                        continue
+
+                    if pos_option == "CE":
+                        live_option_ltp = safe_float(ce_ltp)
+                    else:
+                        live_option_ltp = safe_float(pe_ltp)
+
+                    if live_option_ltp <= 0:
+                        continue
+
+                    pos_symbol = str(
+                        position.get("symbol", trade_symbol)
+                    ).strip().upper()
+
+                    pos_strike = position.get("strike")
+                    pos_expiry = position.get("expiry")
+
+                    trader.update_position_price(
+                        current_price=live_option_ltp,
+                        symbol=pos_symbol,
+                        option_mode=pos_option,
+                        strike=pos_strike,
+                        expiry=pos_expiry
+                    )
+
+        except Exception as e:
+            logging.exception(
+                f"Option live P&L sync error: {e}"
+            )
+
     # AUTO PAPER EXIT
     # ========================================================
 
@@ -3569,7 +3632,7 @@ if page == "🏠 Dashboard":
             ):
 
                 st.info(
-                    "⏸️ AUTO PAPER ENTRY BLOCKED: "
+
                     "Indian market is closed/pre-market."
                 )
 
@@ -3979,7 +4042,7 @@ if page == "🏠 Dashboard":
                     if not existing_position:
 
                         st.info(
-                            f"ℹ️ AUTO PAPER {option_mode}: "
+
                             "No active BUY position to exit."
                         )
 
@@ -4031,7 +4094,7 @@ if page == "🏠 Dashboard":
                         else:
 
                             st.info(
-                                f"ℹ️ AUTO PAPER "
+
                                 f"{option_mode} EXIT: "
                                 + str(result)
                             )
@@ -4045,7 +4108,7 @@ if page == "🏠 Dashboard":
                 if current_price <= 0:
 
                     st.warning(
-                        "⚠️ Current market price unavailable."
+
                     )
 
                 # -------------------------------------------------
@@ -4058,7 +4121,7 @@ if page == "🏠 Dashboard":
                 ):
 
                     st.info(
-                        "ℹ️ AUTO PAPER BUY blocked: "
+
                         f"AI confidence {signal_strength:.1f}% "
                         f"< {MIN_AUTO_CONFIDENCE:.0f}%."
                     )
@@ -4095,7 +4158,7 @@ if page == "🏠 Dashboard":
                     else:
 
                         st.info(
-                            "ℹ️ Trade: "
+                        exact_strike
                             + str(result)
                         )
         except Exception as e:
@@ -4105,9 +4168,8 @@ if page == "🏠 Dashboard":
             )
 
             st.error(
-                f"❌ Auto Trade Error: {e}"
+                f"Auto trade error: {e}"
             )
-
     # ========================================================
     # OFFLINE PAPER OPTION TEST
     # ========================================================
@@ -4478,7 +4540,7 @@ if page == "🏠 Dashboard":
                         else:
 
                             st.success(
-                                f"⚡ Auto Exit: {exit_result}"
+                                f"⚠️ Auto Exit: {exit_result}"
                             )
 
                     except Exception as e:
@@ -4532,8 +4594,8 @@ if page == "🏠 Dashboard":
                         )
 
             st.caption(
-                "Suggested test: BUY at ₹150 → "
-                "Current LTP ₹160 → CHECK SL/TARGET → "
+                "Suggested test: BUY at ₹150 ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ "
+                "Current LTP ₹160 ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ CHECK SL/TARGET ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ "
                 "then SELL/EXIT."
             )
 
@@ -4638,7 +4700,7 @@ elif page == "📈 Market":
     except Exception as e:
 
         st.error(
-            f"❌ Market Page Error: {e}"
+            f"Dashboard page error: {e}"
         )
 
 # ============================================================
@@ -4691,7 +4753,7 @@ elif page == "💰 Trading":
     except Exception as e:
 
         st.error(
-            f"❌ Trading Page Error: {e}"
+            f"Trading page error: {e}"
         )
    
 # ============================================================
@@ -4798,3 +4860,8 @@ st.caption(
     "Jha SmartTrader AI Pro • "
     "AI Trading Terminal"
 )
+
+
+
+
+

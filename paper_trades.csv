@@ -1,2 +1,3 @@
-Time,Symbol,Side,Entry,Stoploss,Target,Quantity,Status,Exit,P&L
-2026-09-03 11:17:19,^NSEI,BUY,100.0,80.0,140.0,1,CLOSED,110.0,10
+Time,Market,Symbol,Side,Entry,Stoploss,Target,Quantity,Status,Exit,P&L
+2026-09-03 11:17:19,INDIA,^NSEI,BUY,100.0,80.0,140.0,1,CLOSED,110.0,10
+2026-09-19 12:30:28,DELTA,1000BONKUSD,BUY,100.0,80.0,140.0,1,CLOSED,140.0,40
