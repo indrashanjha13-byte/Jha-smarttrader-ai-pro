@@ -71,7 +71,28 @@ def reports_page():
     st.info("Trading Reports")
 
     try:
-        history = pd.read_csv("trade_history.csv")
+        # =================================================
+        # ROBUST TRADE HISTORY CSV LOAD
+        # =================================================
+        # Some older/deployed CSV versions may contain a
+        # malformed row with extra fields. Keep valid rows
+        # so the Reports page does not crash completely.
+        # =================================================
+
+        history_file = "trade_history.csv"
+
+        try:
+            history = pd.read_csv(
+                history_file,
+                engine="python",
+                on_bad_lines="warn"
+            )
+        except Exception as csv_error:
+            st.error(
+                f"Could not read trade history CSV: {csv_error}"
+            )
+            return
+
         history = normalize_history(history)
 
         if history.empty:
