@@ -1,3 +1,13 @@
+﻿from pathlib import Path
+import sys
+
+# Ensure project root is available for imports when this page
+# is executed directly by Streamlit.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import streamlit as st
 import pandas as pd
 
@@ -14,7 +24,7 @@ st.set_page_config(
 )
 
 
-st.title("📊 Stock AI Scanner")
+st.title("Stock AI Scanner")
 st.caption(
     "AI-powered BUY / SELL / HOLD stock scanner"
 )
@@ -24,12 +34,36 @@ st.caption(
 # SETTINGS
 # =========================================================
 
-st.sidebar.header("⚙️ Scanner Settings")
+st.sidebar.header("Scanner Settings")
+
+from stock_ai_scanner import NSE_STOCKS
+
+
+# =========================================================
+# STOCK SCAN SIZE
+# =========================================================
+
+stock_options = [
+    5,
+    10,
+    20,
+    50,
+    100,
+    250,
+    500,
+    1000,
+    len(NSE_STOCKS),
+]
 
 stock_count = st.sidebar.selectbox(
     "Stocks to Scan",
-    [5, 10, 20, 50],
+    stock_options,
     index=0,
+    format_func=lambda x: (
+        f"{x} stocks"
+        if x < len(NSE_STOCKS)
+        else f"FULL NSE UNIVERSE ({x} stocks)"
+    ),
 )
 
 interval = st.sidebar.selectbox(
@@ -67,13 +101,12 @@ signal_filter = st.sidebar.selectbox(
 # STOCK UNIVERSE
 # =========================================================
 
-from stock_ai_scanner import NSE_STOCKS
 
 
 symbols = list(NSE_STOCKS)
 
 
-# फिलहाल testing के लिए limited stocks
+# Scanner testing note
 symbols = symbols[:stock_count]
 
 
@@ -91,32 +124,70 @@ st.sidebar.write(
 # =========================================================
 
 if st.button(
-    "🔍 RUN AI STOCK SCAN",
+    "RUN AI STOCK SCAN",
     type="primary",
     use_container_width=True,
 ):
 
-    with st.spinner(
-        f"Scanning {len(symbols)} stocks..."
+    batch_size = 100
+
+    batches = [
+        symbols[i:i + batch_size]
+        for i in range(0, len(symbols), batch_size)
+    ]
+
+    total_batches = len(batches)
+
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
+    results = []
+
+    for batch_number, batch_symbols in enumerate(
+        batches,
+        start=1,
     ):
+
+        status_text.info(
+            f"Scanning batch {batch_number}/{total_batches} "
+            f"({len(batch_symbols)} stocks)..."
+        )
 
         try:
 
-            df = scan_stocks(
-                symbols=symbols,
+            batch_df = scan_stocks(
+                symbols=batch_symbols,
                 interval=interval,
                 period=period,
                 max_workers=8,
             )
 
+            if batch_df is not None and not batch_df.empty:
+                results.append(batch_df)
+
         except Exception as exc:
 
-            st.error(
-                f"Scanner Error: {exc}"
+            st.warning(
+                f"Batch {batch_number}/{total_batches} failed: {exc}"
             )
 
-            st.stop()
+        progress_bar.progress(
+            batch_number / total_batches
+        )
 
+    status_text.empty()
+    progress_bar.empty()
+
+    if results:
+
+        df = pd.concat(
+            results,
+            ignore_index=True,
+        )
+
+    else:
+
+        df = pd.DataFrame()
 
     if df is None or df.empty:
 
@@ -193,22 +264,22 @@ if st.button(
 
 
     col1.metric(
-        "📊 Scanned",
+        "Scanned",
         len(df),
     )
 
     col2.metric(
-        "🟢 AI BUY",
+        "AI BUY",
         buy_count,
     )
 
     col3.metric(
-        "🔴 AI SELL",
+        "AI SELL",
         sell_count,
     )
 
     col4.metric(
-        "🟡 HOLD",
+        "HOLD",
         hold_count,
     )
 
@@ -290,7 +361,7 @@ if st.button(
     # =====================================================
 
     st.subheader(
-        f"📋 AI Signals ({len(display_df)})"
+        f"AI Signals ({len(display_df)})"
     )
 
 
@@ -316,7 +387,7 @@ if st.button(
     if not buy_df.empty:
 
         st.subheader(
-            "🟢 Top AI BUY Stocks"
+            "Top AI BUY Stocks"
         )
 
 
@@ -326,6 +397,8 @@ if st.button(
             else buy_df
         )
 
+        # Show BUY stocks according to selected scan size
+        buy_display = buy_display.head(stock_count)
 
         st.dataframe(
             buy_display,
@@ -349,7 +422,7 @@ if st.button(
     if not sell_df.empty:
 
         st.subheader(
-            "🔴 Top AI SELL Stocks"
+        "Top AI SELL Stocks"
         )
 
 
@@ -377,7 +450,7 @@ if st.button(
 
 
     st.download_button(
-        "⬇️ Download Scan CSV",
+        "Download Scan CSV",
         csv_data,
         file_name="stock_ai_scan.csv",
         mime="text/csv",
@@ -394,19 +467,19 @@ else:
 
     st.markdown(
         """
-## 🚀 Stock AI Scanner
+## Stock AI Scanner
 
-यह scanner stocks को analyse करेगा:
+This scanner analyzes stocks:
 
-- 🟢 AI BUY
-- 🔴 AI SELL
-- 🟡 HOLD
-- 📊 Confidence
-- ⭐ AI Score
-- 💰 Current Price
-- 🎯 Entry
-- 🛑 Stop Loss
-- 🎯 Target
+- AI BUY
+- AI SELL
+- HOLD
+- Confidence
+- AI Score
+- Current Price
+- Entry
+- Stop Loss
+- Target
 - RSI
 - MACD
 - Volume
@@ -415,8 +488,8 @@ else:
 
 ### Current Stage
 
-पहले scanner engine को छोटे stock batch पर test किया जा रहा है।
+Scanner engine was tested successfully on a small stock batch.
 
-उसके बाद इसी system को **3000+ stocks** तक expand किया जाएगा।
+The scanner now supports the current NSE EQ universe dynamically.
 """
     )
