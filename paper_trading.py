@@ -1,4 +1,4 @@
-﻿import csv
+import csv
 import os
 import logging
 from datetime import datetime
@@ -275,7 +275,7 @@ class PaperTrader:
                 "N/A"
             ):
                 return False, (
-                    "Ã¢ÂÅ’ Invalid option mode. "
+                    "Invalid option mode. "
                     "Use CE, PE or N/A."
                 )
 
@@ -297,7 +297,7 @@ class PaperTrader:
             )
 
             if not symbol:
-                return False, "Ã¢ÂÅ’ Invalid symbol"
+                return False, "[ERROR] Invalid symbol"
 
             if price <= 0:
                 return False, "Ã¢ÂÅ’ Invalid entry price"
@@ -355,7 +355,7 @@ class PaperTrader:
             if position_key in self.positions:
 
                 return False, (
-                    f"Ã¢Å¡Â Ã¯Â¸Â {symbol} {option_mode} "
+                    f"âš ï¸ {symbol} {option_mode} "
                     f"position already exists"
                 )
 
@@ -363,7 +363,7 @@ class PaperTrader:
 
             if cost > self.balance:
                 return False, (
-                    "Ã¢ÂÅ’ Insufficient Paper Trading Balance"
+                    "Insufficient Paper Trading Balance"
                 )
 
             self.balance -= cost
@@ -435,7 +435,7 @@ class PaperTrader:
             )
 
             logging.info(
-                f"Ã°Å¸Å¸Â¢ PAPER BUY | "
+                f"ðŸŸ¢ PAPER BUY | "
                 f"{symbol} {option_mode} | "
                 f"Entry={price} | Qty={qty} | "
                 f"Target={target} | SL={stoploss}"
@@ -463,7 +463,7 @@ class PaperTrader:
         except Exception as e:
 
             logging.exception(
-                "Ã¢ÂÅ’ Paper Buy Error"
+                "[ERROR] Paper Buy Error"
             )
 
             return False, f"Error: {e}"
@@ -566,14 +566,14 @@ class PaperTrader:
 
             if position_key in self.positions:
                 return False, (
-                    f"Ã¢Å¡Â Ã¯Â¸Â {symbol} SHORT position already exists"
+                    f"âš ï¸ {symbol} SHORT position already exists"
                 )
 
             margin = price * qty
 
             if margin > self.balance:
                 return False, (
-                    "Ã¢ÂÅ’ Insufficient Paper Trading Balance"
+                    "Insufficient Paper Trading Balance"
                 )
 
             self.balance -= margin
@@ -641,7 +641,7 @@ class PaperTrader:
             )
 
             logging.info(
-                f"Ã°Å¸â€Â´ PAPER SHORT | "
+                f"[SHORT] PAPER SHORT | "
                 f"{symbol} | Entry={price} | "
                 f"Qty={qty} | Target={target} | SL={stoploss}"
             )
@@ -1017,16 +1017,12 @@ class PaperTrader:
                 invested_capital + pnl
             )
 
-            self.save_trade(
+            self.update_trade_history_exit(
                 action="SELL",
                 symbol=symbol,
-                entry=entry,
                 exit_price=current_price,
-                qty=qty,
-                target=target,
-                stoploss=stoploss,
                 pnl=pnl,
-                side="LONG"
+                qty=qty
             )
 
             if position_key in self.positions:
@@ -1151,16 +1147,12 @@ class PaperTrader:
                 margin + pnl
             )
 
-            self.save_trade(
+            self.update_trade_history_exit(
                 action="COVER",
                 symbol=symbol,
-                entry=entry,
                 exit_price=current_price,
-                qty=qty,
-                target=target,
-                stoploss=stoploss,
                 pnl=pnl,
-                side="SHORT"
+                qty=qty
             )
 
             if position_key in self.positions:
@@ -1298,7 +1290,7 @@ class PaperTrader:
                         return {
                             "status": "EXIT",
                             "reason": "TARGET",
-                            "message": "Ã°Å¸Å½Â¯ LONG Target Hit",
+                            "message": "ðŸŽ¯ LONG Target Hit",
                             "symbol": symbol,
                             "option_mode": option_mode,
                             "side": "LONG",
@@ -1354,7 +1346,7 @@ class PaperTrader:
                         return {
                             "status": "EXIT",
                             "reason": "TARGET",
-                            "message": "Ã°Å¸Å½Â¯ SHORT Target Hit",
+                            "message": "ðŸŽ¯ SHORT Target Hit",
                             "symbol": symbol,
                             "option_mode": option_mode,
                             "side": "SHORT",
@@ -1810,6 +1802,126 @@ class PaperTrader:
     # =====================================================
     # SAVE TRADE
     # =====================================================
+
+    def update_trade_history_exit(
+        self,
+        action,
+        symbol,
+        exit_price,
+        pnl,
+        qty=None
+    ):
+        """Update the latest matching open entry in trade_history.csv."""
+
+        try:
+            file_path = "trade_history.csv"
+
+            if not os.path.exists(file_path):
+                return False
+
+            with open(
+                file_path,
+                "r",
+                newline="",
+                encoding="utf-8-sig"
+            ) as f:
+                rows = list(csv.reader(f))
+
+            if not rows:
+                return False
+
+            header = rows[0]
+
+            if len(header) != 9:
+                return False
+
+            symbol = str(symbol).strip()
+            action = str(action).strip().upper()
+
+            if action == "SELL":
+                entry_action = "BUY"
+            elif action == "COVER":
+                entry_action = "SHORT"
+            else:
+                return False
+
+            qty_value = None
+
+            if qty is not None:
+                try:
+                    qty_value = int(float(qty))
+                except Exception:
+                    qty_value = None
+
+            match_index = None
+
+            # Search newest-to-oldest for matching open entry.
+            for i in range(len(rows) - 1, 0, -1):
+
+                row = rows[i]
+
+                if len(row) != 9:
+                    continue
+
+                row_action = str(row[1]).strip().upper()
+                row_symbol = str(row[2]).strip()
+                row_exit = str(row[4]).strip().lower()
+
+                if row_action != entry_action:
+                    continue
+
+                if row_symbol != symbol:
+                    continue
+
+                if row_exit not in {
+                    "",
+                    "nan",
+                    "none",
+                    "null"
+                }:
+                    continue
+
+                if qty_value is not None:
+                    try:
+                        if int(float(row[5])) != qty_value:
+                            continue
+                    except Exception:
+                        continue
+
+                match_index = i
+                break
+
+            if match_index is None:
+                return False
+
+            rows[match_index][4] = exit_price
+            rows[match_index][8] = pnl
+
+            with open(
+                file_path,
+                "w",
+                newline="",
+                encoding="utf-8"
+            ) as f:
+
+                writer = csv.writer(f)
+                writer.writerows(rows)
+
+            logging.info(
+                f"Trade history updated | {symbol} | "
+                f"Entry={entry_action} | "
+                f"Exit={exit_price} | PNL={pnl}"
+            )
+
+            return True
+
+        except Exception as e:
+
+            logging.exception(
+                f"update_trade_history_exit error: {e}"
+            )
+
+            return False
 
     def save_trade(
         self,
